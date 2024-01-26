@@ -14,14 +14,11 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, windows-latest]
-        node-version: [16.x]
+        node-version: [20.x]
         include:
           - os: macos-latest
             arch: arm64
             package-script: "package-mac-arm"
-          - os: macos-latest
-            arch: x64
-            package-script: "package-mac-intel"
           - os: windows-latest
             arch: x64
             package-script: "package-win"
