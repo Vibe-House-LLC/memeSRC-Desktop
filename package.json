@@ -1,0 +1,16 @@
+{
+  "name": "memesrc",
+  "productName": "memeSRC",
+  "version": "2.0.0",
+  "description": "memeSRC Desktop",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "start-prod": "NODE_ENV=production electron ."
+  },
+  "author": "Vibe House LLC",
+  "license": "MIT",
+  "dependencies": {
+    "electron": "^28.2.0"
+  }
+}
