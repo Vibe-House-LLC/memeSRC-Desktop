@@ -127,7 +127,7 @@ function fetchMetadata(itemCid) {
 }
 
 function listIPFSDirectory() {
-  const ipfsDirectory = path.join("/", "memesrc", "index");
+  const ipfsDirectory = os.platform() === 'win32' ? '\\memesrc\\index' : '/memesrc/index';
 
   ipfs(`files stat ${ipfsDirectory}`, (error, stdout, stderr) => {
     if (error || stderr) {
