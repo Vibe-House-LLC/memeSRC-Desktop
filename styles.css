@@ -1,0 +1,84 @@
+body {
+  font-family: Arial, sans-serif;
+  text-align: center;
+  margin-top: 50px;
+}
+.daemon-control {
+  display: inline-block;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  background-color: #f9f9f9;
+}
+.status-indicator {
+  margin-bottom: 10px;
+  padding: 10px;
+  border-radius: 5px;
+  color: #fff;
+  text-align: center;
+}
+.status-indicator.changing {
+  background-color: #808080; /* Grey color */
+}
+.status-indicator.running {
+  background-color: #4caf50;
+}
+.status-indicator.not-running {
+  background-color: #f44336;
+}
+.toggle-button {
+  padding: 10px 20px;
+  background-color: #dddddd;
+  color: rgb(0, 0, 0);
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.toggle-button:disabled {
+  background-color: #cccccc; /* Light grey color */
+  color: #666666; /* Darker grey color */
+  cursor: not-allowed; /* Change cursor to indicate disabled state */
+}
+/* General table styling */
+.ipfs-indexes table {
+  width: 80%;
+  max-width: 1000px;
+  border-collapse: collapse; /* Ensures that the borders are clean and joined */
+}
+
+/* Table header styling */
+.ipfs-indexes th {
+  background-color: #f4f4f4; /* Light gray background for headers */
+  padding: 10px; /* Add more space around the text */
+  border: 1px solid #ddd; /* Light border for each header cell */
+  text-align: left; /* Align text to the left */
+}
+
+/* Table data cell styling */
+.ipfs-indexes td {
+  padding: 8px; /* Add space around the content in each cell */
+  border: 1px solid #ddd; /* Light border for each data cell */
+}
+
+/* Hover effect for rows */
+.ipfs-indexes tr:hover {
+  background-color: #eaeaea; /* Light highlight for row under mouse cursor */
+}
+
+/* Style modifications for specific columns */
+
+/* Make names bold */
+.ipfs-indexes td.name {
+  font-weight: bold;
+}
+
+/* Make CIDs smaller and monospaced */
+.ipfs-indexes td.cid {
+  font-size: smaller;
+  font-family: monospace;
+}
+
+/* Styling for checkboxes */
+.ipfs-indexes input[type="checkbox"] {
+  margin-left: 5px; /* Slight margin for checkboxes */
+}

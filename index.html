@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="stylesheet" type="text/css" href="styles.css">
+    <script type="text/javascript" src="scripts.js"></script>
+  </head>
+  <body>
+    <h1>memeSRC Settings</h1>
+    <div class="daemon-control">
+      <div class="status-indicator" id="daemonStatus">Checking status...</div>
+      <button id="toggleDaemon" class="toggle-button">Toggle Daemon</button>
+      <button id="findIpfsPathButton" class="toggle-button">
+        Show IPFS Path
+      </button>
+      <div id="ipfsPathResult"></div>
+    </div>
+
+    <!-- Container for IPFS indexes in a table format -->
+    <center>
+    <div class="ipfs-indexes">
+      <h2>Indexes</h2>
+      <table id="ipfsIndexesTable">
+        <thead>
+          <tr>
+            <th>Pin</th>
+            <th>Name</th>
+            <th>CID</th>
+          </tr>
+        </thead>
+        <tbody id="ipfsIndexesList">
+          <!-- Directory entries will be populated here -->
+        </tbody>
+      </table>
+    </div>
+  </center>
+  </body>
+</html>

@@ -13,24 +13,22 @@ function createMainWindow() {
     });
 
     const mainWindow = new BrowserWindow({
-        title: 'memeSRC', // Fixed typo here from 'titls' to 'title'
+        title: 'memeSRC',
         x: mainWindowState.x,
         y: mainWindowState.y,
         width: mainWindowState.width,
         height: mainWindowState.height,
         webPreferences: {
             nodeIntegration: true,
-            contextIsolation: false,
-            // enableRemoteModule: true, // Only if you need the remote module, which is not recommended for security reasons.
+            contextIsolation: false
         },
     });
 
-    // Open devtools if in dev env
     if (isDev) {
         mainWindow.webContents.openDevTools();
     }
 
-    mainWindow.loadFile(path.join(__dirname, './renderer/index.html'));
+    mainWindow.loadFile(path.join(__dirname, './index.html'));
     // mainWindow.loadURL('https://beta.memesrc.com/')
 
     mainWindowState.manage(mainWindow);
