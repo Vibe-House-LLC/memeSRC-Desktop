@@ -5,12 +5,19 @@
   "description": "memeSRC Desktop",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "start-prod": "NODE_ENV=production electron ."
+    "start": "NODE_ENV=dev electron .",
+    "start-prod": "electron .",
+    "package-mac-arm": "electron-packager . --overwrite --platform=darwin --arch=arm64 --icon=icon.icns --prune=true --out=release-builds",
+    "package-mac-intel": "electron-packager . --overwrite --platform=darwin --arch=x64 --icon=icon.icns --prune=true --out=release-builds",
+    "package-win": "electron-packager . --overwrite --platform=win32 --arch=x64 --icon=icon.ico --prune=true --out=release-builds"
   },
   "author": "Vibe House LLC",
   "license": "MIT",
+  "devDependencies": {
+    "electron": "^28.2.0",
+    "electron-packager": "^17.1.2"
+  },
   "dependencies": {
-    "electron": "^28.2.0"
+    "electron-window-state": "^5.0.3"
   }
 }

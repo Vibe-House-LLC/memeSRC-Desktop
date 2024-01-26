@@ -1,53 +1,54 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin-top: 50px;
-        }
-        .daemon-control {
-            display: inline-block;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            background-color: #f9f9f9;
-        }
-        .status-indicator {
-            margin-bottom: 10px;
-            padding: 10px;
-            border-radius: 5px;
-            color: #fff;
-            text-align: center;
-        }
-        .status-indicator.changing {
-            background-color: #808080; /* Grey color */
-        }
-        .status-indicator.running {
-            background-color: #4caf50;
-        }
-        .status-indicator.not-running {
-            background-color: #f44336;
-        }
-        .toggle-button {
-            padding: 10px 20px;
-            background-color: #dddddd;
-            color: rgb(0, 0, 0);
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        .toggle-button:disabled {
-            background-color: #cccccc; /* Light grey color */
-            color: #666666; /* Darker grey color */
-            cursor: not-allowed; /* Change cursor to indicate disabled state */
-        }
+      body {
+        font-family: Arial, sans-serif;
+        text-align: center;
+        margin-top: 50px;
+      }
+      .daemon-control {
+        display: inline-block;
+        padding: 15px;
+        border: 1px solid #ddd;
+        border-radius: 10px;
+        background-color: #f9f9f9;
+      }
+      .status-indicator {
+        margin-bottom: 10px;
+        padding: 10px;
+        border-radius: 5px;
+        color: #fff;
+        text-align: center;
+      }
+      .status-indicator.changing {
+        background-color: #808080; /* Grey color */
+      }
+      .status-indicator.running {
+        background-color: #4caf50;
+      }
+      .status-indicator.not-running {
+        background-color: #f44336;
+      }
+      .toggle-button {
+        padding: 10px 20px;
+        background-color: #dddddd;
+        color: rgb(0, 0, 0);
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      .toggle-button:disabled {
+        background-color: #cccccc; /* Light grey color */
+        color: #666666; /* Darker grey color */
+        cursor: not-allowed; /* Change cursor to indicate disabled state */
+      }
     </style>
     <script>
       const { exec, spawn } = require("child_process");
       let ipfsDaemon;
       let isDaemonOperating = false; // To track if the daemon is in the process of starting or stopping
+      let ipfsPath = null; // Global variable to store the IPFS executable path
 
       function updateUIForStarting() {
         const statusElement = document.getElementById("daemonStatus");
@@ -67,11 +68,38 @@
         toggleButton.disabled = true; // Make sure this line exists
       }
 
+      function findIpfsLocation(callback) {
+        const possiblePaths = [
+          "/opt/homebrew/bin/ipfs",
+          "/usr/local/bin/ipfs",
+          "/usr/bin/ipfs",
+          "C:\\Program Files\\IPFS\\ipfs.exe",
+          // ... Add any other paths where IPFS might be installed ...
+        ];
+
+        let foundPath = null;
+        let checksCompleted = 0;
+
+        possiblePaths.forEach((path, index) => {
+          exec(`"${path}" --version`, (error, stdout, stderr) => {
+            checksCompleted++;
+            if (!foundPath && !error && stdout.includes("ipfs version")) {
+              foundPath = path;
+            }
+            if (checksCompleted === possiblePaths.length) {
+              callback(foundPath);
+            }
+          });
+        });
+      }
+
       function startIpfsDaemon() {
+        if (!ipfsPath) return; // Don't proceed if IPFS path is not found
+
         updateUIForStarting();
         isDaemonOperating = true;
-        const IPFS_PATH = "/opt/homebrew/bin/ipfs"; // Replace with the path to your IPFS executable
-        ipfsDaemon = spawn(IPFS_PATH, ["daemon"]);
+
+        ipfsDaemon = spawn(ipfsPath, ["daemon"]);
 
         ipfsDaemon.stdout.on("data", (data) => {
           console.log(`stdout: ${data}`);
@@ -89,15 +117,18 @@
       }
 
       function stopIpfsDaemon() {
+        if (!ipfsPath) return; // Don't proceed if IPFS path is not found
+
         updateUIForStopping();
         isDaemonOperating = true;
+
         console.log(ipfsDaemon);
         if (ipfsDaemon) {
           console.log("Stopping IPFS Daemon");
           ipfsDaemon.kill();
         } else {
           console.log("Stopping IPFS Daemon via 'ipfs shutdown'");
-          exec("ipfs shutdown", (error, stdout, stderr) => {
+          exec(`"${ipfsPath}" shutdown`, (error, stdout, stderr) => {
             if (error) {
               console.error(`exec error: ${error}`);
               return;
@@ -114,7 +145,9 @@
       }
 
       function checkDaemonStatus() {
-        exec(`ipfs swarm peers`, (error, stdout, stderr) => {
+        if (!ipfsPath) return; // Don't proceed if IPFS path is not found
+
+        exec(`"${ipfsPath}" swarm peers`, (error, stdout, stderr) => {
           const statusElement = document.getElementById("daemonStatus");
           const toggleButton = document.getElementById("toggleDaemon");
           if (error || stderr) {
@@ -133,6 +166,21 @@
 
       window.onload = () => {
         const toggleButton = document.getElementById("toggleDaemon");
+        const findIpfsPathButton =
+          document.getElementById("findIpfsPathButton");
+        const ipfsPathResult = document.getElementById("ipfsPathResult");
+
+        findIpfsLocation((path) => {
+          if (path) {
+            ipfsPath = path; // Set the global IPFS path
+            // ipfsPathResult.innerHTML = `IPFS Path: ${path}`;
+            checkDaemonStatus(); // Call checkDaemonStatus after setting ipfsPath
+          } else {
+            // ipfsPathResult.innerHTML = "IPFS Path not found.";
+            checkDaemonStatus(); // Call checkDaemonStatus even if path not found
+          }
+        });
+
         toggleButton.addEventListener("click", (e) => {
           e.preventDefault();
           if (!isDaemonOperating) {
@@ -144,15 +192,29 @@
             }
           }
         });
-        checkDaemonStatus();
+
+        findIpfsPathButton.addEventListener("click", () => {
+          findIpfsLocation((path) => {
+            if (path) {
+              ipfsPath = path; // Update the global IPFS path
+              ipfsPathResult.innerHTML = `IPFS Path: ${path}`;
+            } else {
+              ipfsPathResult.innerHTML = "IPFS Path not found.";
+            }
+          });
+        });
       };
     </script>
   </head>
   <body>
-      <h1>IPFS Daemon Controller</h1>
-      <div class="daemon-control">
-          <div class="status-indicator" id="daemonStatus">Checking status...</div>
-          <button id="toggleDaemon" class="toggle-button">Toggle Daemon</button>
-      </div>
+    <h1>memeSRC Settings</h1>
+    <div class="daemon-control">
+      <div class="status-indicator" id="daemonStatus">Checking status...</div>
+      <button id="toggleDaemon" class="toggle-button">Toggle Daemon</button>
+      <button id="findIpfsPathButton" class="toggle-button">
+        Show IPFS Path
+      </button>
+      <div id="ipfsPathResult"></div>
+    </div>
   </body>
-  </html>
+</html>
