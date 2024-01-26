@@ -16,9 +16,6 @@ jobs:
         os: [macos-latest, windows-latest]
         node-version: [20.x]
         include:
-          - os: macos-latest
-            arch: arm64
-            package-script: "package-mac-arm"
           - os: windows-latest
             arch: x64
             package-script: "package-win"
