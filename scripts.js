@@ -310,6 +310,35 @@ function updateIndexesTable(directories) {
   });
 }
 
+function handleCidSubmission() {
+  const cidInput = document.getElementById("cidInput");
+  const cid = cidInput.value.trim();
+
+  if (!cid) {
+    alert("Please enter a CID.");
+    return;
+  }
+
+  addCidToIndex(cid);
+}
+
+function addCidToIndex(cid) {
+  const destinationPath = `/memesrc/index/${cid}`;
+
+  ipfs(`files cp /ipfs/${cid} ${destinationPath}`, (error, stdout, stderr) => {
+    if (error || stderr) {
+      console.error(`Error copying CID to /memesrc/index/:`, error || stderr);
+    } else {
+      console.log(`Copied CID ${cid} to ${destinationPath}`);
+      listIPFSDirectory(); // Refresh the list
+    }
+  });
+
+  // Clear the input field after submission
+  document.getElementById("cidInput").value = '';
+}
+
+
 window.onload = () => {
   const toggleButton = document.getElementById("toggleDaemon");
 
@@ -327,4 +356,7 @@ window.onload = () => {
       }
     }
   });
+  
+  const submitCidButton = document.getElementById("submitCid");
+  submitCidButton.addEventListener("click", handleCidSubmission);
 };

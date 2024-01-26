@@ -15,7 +15,6 @@
       <div id="ipfsPathResult"></div>
     </div>
 
-    <!-- Container for IPFS indexes in a table format -->
     <center>
     <div class="ipfs-indexes">
       <h2>Indexes</h2>
@@ -31,7 +30,14 @@
           <!-- Directory entries will be populated here -->
         </tbody>
       </table>
+
+      <!-- CID Input Form -->
+      <div class="cid-input-form">
+        <label for="cidInput">Add Index:</label>
+        <input type="text" id="cidInput" name="cidInput" placeholder="CID (Content Identifier)">
+        <button type="button" id="submitCid">Import</button>
+      </div>
     </div>
-  </center>
+    </center>
   </body>
 </html>
