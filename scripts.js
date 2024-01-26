@@ -1,6 +1,6 @@
-const { exec, spawn } = require("child_process");
-const os = require('os');
-const path = require('path');
+const { exec, spawn, app } = require("child_process");
+const os = require("os");
+const path = require("path");
 
 let ipfsDaemon;
 let isDaemonOperating = false;
@@ -26,12 +26,14 @@ function updateUIForStopping() {
 
 function findIpfsLocation(callback) {
   const homeDirectory = os.homedir();
+  const appDirectory = app.getAppPath();
 
   const possiblePaths = [
     path.join("/opt", "homebrew", "bin", "ipfs"),
     path.join("/usr", "local", "bin", "ipfs"),
     path.join("/usr", "bin", "ipfs"),
-    path.join(homeDirectory, "Desktop", "ipfs", "kubo")
+    path.join(homeDirectory, "Desktop", "ipfs", "kubo"),
+    path.join(appDirectory, "ipfs"),
   ];
 
   let foundPath = null;
@@ -123,20 +125,29 @@ function checkDaemonStatus() {
 
 function fetchMetadata(ipfsPath, itemCid) {
   return new Promise((resolve, reject) => {
-    exec(`"${ipfsPath}" cat ${itemCid}/00_metadata.json`, (error, stdout, stderr) => {
-      if (error || stderr) {
-        console.warn(`Error fetching metadata for CID ${itemCid}:`, error || stderr);
-        resolve(null);  // Resolve with null if there's an error
-      } else {
-        try {
-          const metadata = JSON.parse(stdout);
-          resolve(metadata);
-        } catch (parseError) {
-          console.error(`Error parsing metadata for CID ${itemCid}:`, parseError);
-          resolve(null);
+    exec(
+      `"${ipfsPath}" cat ${itemCid}/00_metadata.json`,
+      (error, stdout, stderr) => {
+        if (error || stderr) {
+          console.warn(
+            `Error fetching metadata for CID ${itemCid}:`,
+            error || stderr
+          );
+          resolve(null); // Resolve with null if there's an error
+        } else {
+          try {
+            const metadata = JSON.parse(stdout);
+            resolve(metadata);
+          } catch (parseError) {
+            console.error(
+              `Error parsing metadata for CID ${itemCid}:`,
+              parseError
+            );
+            resolve(null);
+          }
         }
       }
-    });
+    );
   });
 }
 
@@ -150,55 +161,77 @@ function listIPFSDirectory() {
 
     const cid = stdout.split("\n")[0];
 
-    exec(`"${ipfsPath}" files stat /memesrc`, (memesrcError, memesrcStdout, memesrcStderr) => {
-      if (memesrcError || memesrcStderr) {
-        return console.error("Error getting /memesrc CID:", memesrcError || memesrcStderr);
-      }
-
-      const memesrcCid = memesrcStdout.split("\n")[0];
-
-      exec(`"${ipfsPath}" ls ${cid}`, (lsError, lsStdout, lsStderr) => {
-        if (lsError || lsStderr) {
-          return console.error("Error listing directory contents:", lsError || lsStderr);
+    exec(
+      `"${ipfsPath}" files stat /memesrc`,
+      (memesrcError, memesrcStdout, memesrcStderr) => {
+        if (memesrcError || memesrcStderr) {
+          return console.error(
+            "Error getting /memesrc CID:",
+            memesrcError || memesrcStderr
+          );
         }
 
-        const lines = lsStdout.trim().split("\n");
-        const directories = lines.map(line => {
-          const parts = line.split(/\s+/);
-          if (parts.length >= 3) {
-            const itemCid = parts[0];
-            const name = parts[parts.length - 1];
-            return { name, cid: itemCid, index_name: null };
-          } else {
-            console.warn(`Unexpected format for line: ${line}`);
-            return null;
-          }
-        });
+        const memesrcCid = memesrcStdout.split("\n")[0];
 
-        Promise.all(directories.filter(dir => dir).map(dir => 
-          fetchMetadata(ipfsPath, dir.cid).then(metadata => ({
-            ...dir,
-            index_name: metadata ? metadata.index_name : 'N/A'
-          }))
-        )).then(completedDirectories => {
-          updateIndexesTable(completedDirectories);
-          console.log({ memesrc_cid: memesrcCid, directories: completedDirectories });
+        exec(`"${ipfsPath}" ls ${cid}`, (lsError, lsStdout, lsStderr) => {
+          if (lsError || lsStderr) {
+            return console.error(
+              "Error listing directory contents:",
+              lsError || lsStderr
+            );
+          }
+
+          const lines = lsStdout.trim().split("\n");
+          const directories = lines.map((line) => {
+            const parts = line.split(/\s+/);
+            if (parts.length >= 3) {
+              const itemCid = parts[0];
+              const name = parts[parts.length - 1];
+              return { name, cid: itemCid, index_name: null };
+            } else {
+              console.warn(`Unexpected format for line: ${line}`);
+              return null;
+            }
+          });
+
+          Promise.all(
+            directories
+              .filter((dir) => dir)
+              .map((dir) =>
+                fetchMetadata(ipfsPath, dir.cid).then((metadata) => ({
+                  ...dir,
+                  index_name: metadata ? metadata.index_name : "N/A",
+                }))
+              )
+          ).then((completedDirectories) => {
+            updateIndexesTable(completedDirectories);
+            console.log({
+              memesrc_cid: memesrcCid,
+              directories: completedDirectories,
+            });
+          });
         });
-      });
-    });
+      }
+    );
   });
 }
 
 function fetchPinStatus(ipfsPath, itemCid) {
   return new Promise((resolve, reject) => {
-    exec(`"${ipfsPath}" pin ls --type=recursive ${itemCid}`, (error, stdout, stderr) => {
-      if (error || stderr) {
-        console.warn(`Error checking pin status for CID ${itemCid}:`, error || stderr);
-        resolve(false);  // If there's an error, assume it's not pinned
-      } else {
-        resolve(stdout.includes(itemCid));  // If the CID is listed, it's pinned
+    exec(
+      `"${ipfsPath}" pin ls --type=recursive ${itemCid}`,
+      (error, stdout, stderr) => {
+        if (error || stderr) {
+          console.warn(
+            `Error checking pin status for CID ${itemCid}:`,
+            error || stderr
+          );
+          resolve(false); // If there's an error, assume it's not pinned
+        } else {
+          resolve(stdout.includes(itemCid)); // If the CID is listed, it's pinned
+        }
       }
-    });
+    );
   });
 }
 
@@ -231,31 +264,32 @@ function handlePinClick(cid, isChecked) {
 }
 
 function updateIndexesTable(directories) {
-  const tableBody = document.getElementById('ipfsIndexesList');
-  tableBody.innerHTML = ''; // Clear existing rows
+  const tableBody = document.getElementById("ipfsIndexesList");
+  tableBody.innerHTML = ""; // Clear existing rows
 
-  directories.forEach(directory => {
+  directories.forEach((directory) => {
     const row = tableBody.insertRow();
     const pinCell = row.insertCell();
     const indexNameCell = row.insertCell();
     const cidCell = row.insertCell();
 
     // Set classes for styling
-    indexNameCell.className = 'name';
-    cidCell.className = 'cid';
+    indexNameCell.className = "name";
+    cidCell.className = "cid";
 
     // Checkbox for pin status
-    const pinCheckbox = document.createElement('input');
-    pinCheckbox.type = 'checkbox';
-    pinCheckbox.onclick = () => handlePinClick(directory.cid, pinCheckbox.checked);
-    pinCheckbox.disabled = true;  // Initially disabled, enabled when status is known
+    const pinCheckbox = document.createElement("input");
+    pinCheckbox.type = "checkbox";
+    pinCheckbox.onclick = () =>
+      handlePinClick(directory.cid, pinCheckbox.checked);
+    pinCheckbox.disabled = true; // Initially disabled, enabled when status is known
     pinCell.appendChild(pinCheckbox);
 
-    indexNameCell.textContent = directory.index_name || 'N/A';
+    indexNameCell.textContent = directory.index_name || "N/A";
     cidCell.textContent = directory.cid;
 
     // Fetch and update pin status
-    fetchPinStatus(ipfsPath, directory.cid).then(isPinned => {
+    fetchPinStatus(ipfsPath, directory.cid).then((isPinned) => {
       pinCheckbox.checked = isPinned;
       pinCheckbox.disabled = false;
     });
