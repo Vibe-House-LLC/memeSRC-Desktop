@@ -1,7 +1,7 @@
-const { ipcRenderer } = require('electron');
-const os = require('os');
-const path = require('path');
-const { exec, spawn } = require('child_process');
+const { ipcRenderer } = require("electron");
+const os = require("os");
+const path = require("path");
+const { exec, spawn } = require("child_process");
 
 let ipfsDaemon;
 let isDaemonOperating = false;
@@ -25,7 +25,7 @@ function updateUIForStopping() {
 }
 
 // Determine the IPFS executable name based on the operating system
-const ipfsExt = os.platform() === 'win32' ? 'ipfs.exe' : 'ipfs';
+const ipfsExt = os.platform() === "win32" ? "ipfs.exe" : "ipfs";
 const ipfsExecutable = path.join(__dirname, ipfsExt);
 
 function ipfs(commandString, callback) {
@@ -33,7 +33,6 @@ function ipfs(commandString, callback) {
 }
 
 function startIpfsDaemon() {
-
   updateUIForStarting();
   isDaemonOperating = true;
 
@@ -81,131 +80,172 @@ function stopIpfsDaemon() {
 }
 
 function checkDaemonStatus() {
+  return new Promise((resolve, reject) => {
+    ipfs(`swarm peers`, (error, stdout, stderr) => {
+      const statusElement = document.getElementById("daemonStatus");
+      const toggleButton = document.getElementById("toggleDaemon");
 
-  ipfs(`swarm peers`, (error, stdout, stderr) => {
-    const statusElement = document.getElementById("daemonStatus");
-    const toggleButton = document.getElementById("toggleDaemon");
-    if (error || stderr) {
-      statusElement.innerHTML = "IPFS is not running";
-      statusElement.className = "status-indicator not-running";
-      toggleButton.textContent = "Turn on IPFS";
-    } else {
-      statusElement.innerHTML = "IPFS is running";
-      statusElement.className = "status-indicator running";
-      toggleButton.textContent = "Turn off IPFS";
-    }
-    toggleButton.disabled = false;
-    isDaemonOperating = false;
+      if (error || stderr) {
+        statusElement.innerHTML = "IPFS is not running";
+        statusElement.className = "status-indicator not-running";
+        toggleButton.textContent = "Turn on IPFS";
+        resolve(false);
+      } else {
+        statusElement.innerHTML = "IPFS is running";
+        statusElement.className = "status-indicator running";
+        toggleButton.textContent = "Turn off IPFS";
+        resolve(true);
+      }
+    });
   });
 }
 
 function fetchMetadata(itemCid) {
   return new Promise((resolve, reject) => {
-    ipfs(`cat ${itemCid}/00_metadata.json`,
-      (error, stdout, stderr) => {
-        if (error || stderr) {
-          console.warn(
-            `Error fetching metadata for CID ${itemCid}:`,
-            error || stderr
+    ipfs(`cat ${itemCid}/00_metadata.json`, (error, stdout, stderr) => {
+      if (error || stderr) {
+        console.warn(
+          `Error fetching metadata for CID ${itemCid}:`,
+          error || stderr
+        );
+        resolve(null); // Resolve with null if there's an error
+      } else {
+        try {
+          const metadata = JSON.parse(stdout);
+          resolve(metadata);
+        } catch (parseError) {
+          console.error(
+            `Error parsing metadata for CID ${itemCid}:`,
+            parseError
           );
-          resolve(null); // Resolve with null if there's an error
-        } else {
-          try {
-            const metadata = JSON.parse(stdout);
-            resolve(metadata);
-          } catch (parseError) {
-            console.error(
-              `Error parsing metadata for CID ${itemCid}:`,
-              parseError
-            );
-            resolve(null);
-          }
+          resolve(null);
         }
       }
-    );
+    });
   });
 }
 
 function listIPFSDirectory() {
-  const ipfsDirectory = os.platform() === 'win32' ? '\\memesrc\\index' : '/memesrc/index';
-
-  ipfs(`files stat ${ipfsDirectory}`, (error, stdout, stderr) => {
-    if (error || stderr) {
-      return console.error("Error listing IPFS directory:", error || stderr);
-    }
-
-    const cid = stdout.split("\n")[0];
-
-    ipfs(`files stat /memesrc`,
-      (memesrcError, memesrcStdout, memesrcStderr) => {
-        if (memesrcError || memesrcStderr) {
-          return console.error(
-            "Error getting /memesrc CID:",
-            memesrcError || memesrcStderr
-          );
-        }
-
-        const memesrcCid = memesrcStdout.split("\n")[0];
-
-        ipfs(`ls ${cid}`, (lsError, lsStdout, lsStderr) => {
-          if (lsError || lsStderr) {
-            return console.error(
-              "Error listing directory contents:",
-              lsError || lsStderr
-            );
-          }
-
-          const lines = lsStdout.trim().split("\n");
-          const directories = lines.map((line) => {
-            const parts = line.split(/\s+/);
-            if (parts.length >= 3) {
-              const itemCid = parts[0];
-              const name = parts[parts.length - 1];
-              return { name, cid: itemCid, index_name: null };
+  checkDaemonStatus().then((connected) => {
+    if (!connected) {
+      console.log("Didn't load index list since IPFS daemon is not running");
+    } else {
+      // Function to create a directory if it doesn't exist
+      function createDirIfNotExist(dir) {
+        return new Promise((resolve, reject) => {
+          ipfs(`files stat ${dir}`, (statError) => {
+            if (statError) {
+              // Directory does not exist, create it
+              ipfs(`files mkdir ${dir}`, (mkdirError) => {
+                if (mkdirError) {
+                  return reject(
+                    `Error creating directory ${dir}: ${mkdirError}`
+                  );
+                }
+                resolve();
+              });
             } else {
-              console.warn(`Unexpected format for line: ${line}`);
-              return null;
+              // Directory exists
+              resolve();
             }
-          });
-
-          Promise.all(
-            directories
-              .filter((dir) => dir)
-              .map((dir) =>
-                fetchMetadata(dir.cid).then((metadata) => ({
-                  ...dir,
-                  index_name: metadata ? metadata.index_name : "N/A",
-                }))
-              )
-          ).then((completedDirectories) => {
-            updateIndexesTable(completedDirectories);
-            console.log({
-              memesrc_cid: memesrcCid,
-              directories: completedDirectories,
-            });
           });
         });
       }
-    );
+
+      // Ensure /memesrc directory exists
+      createDirIfNotExist("/memesrc")
+        .then(() => {
+          // Now ensure /memesrc/index exists
+          return createDirIfNotExist("/memesrc/index");
+        })
+        .then(() => {
+          // Both directories exist, proceed with listing
+          const ipfsDirectory = "/memesrc/index";
+
+          ipfs(`files stat ${ipfsDirectory}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+              return console.error(
+                "Error listing IPFS directory:",
+                error || stderr
+              );
+            }
+
+            const cid = stdout.split("\n")[0];
+
+            ipfs(
+              `files stat /memesrc`,
+              (memesrcError, memesrcStdout, memesrcStderr) => {
+                if (memesrcError || memesrcStderr) {
+                  return console.error(
+                    "Error getting /memesrc CID:",
+                    memesrcError || memesrcStderr
+                  );
+                }
+
+                const memesrcCid = memesrcStdout.split("\n")[0];
+
+                ipfs(`ls ${cid}`, (lsError, lsStdout, lsStderr) => {
+                  if (lsError || lsStderr) {
+                    return console.error(
+                      "Error listing directory contents:",
+                      lsError || lsStderr
+                    );
+                  }
+
+                  const lines = lsStdout.trim().split("\n");
+                  const directories = lines.map((line) => {
+                    const parts = line.split(/\s+/);
+                    if (parts.length >= 3) {
+                      const itemCid = parts[0];
+                      const name = parts[parts.length - 1];
+                      return { name, cid: itemCid, index_name: null };
+                    } else {
+                      console.warn(`Unexpected format for line: ${line}`);
+                      return null;
+                    }
+                  });
+
+                  Promise.all(
+                    directories
+                      .filter((dir) => dir)
+                      .map((dir) =>
+                        fetchMetadata(dir.cid).then((metadata) => ({
+                          ...dir,
+                          index_name: metadata ? metadata.index_name : "N/A",
+                        }))
+                      )
+                  ).then((completedDirectories) => {
+                    updateIndexesTable(completedDirectories);
+                    console.log({
+                      memesrc_cid: memesrcCid,
+                      directories: completedDirectories,
+                    });
+                  });
+                });
+              }
+            );
+          });
+        })
+        .catch((err) => {
+          console.error(err);
+        });
+    }
   });
 }
 
 function fetchPinStatus(itemCid) {
   return new Promise((resolve, reject) => {
-    exec(
-      `ipfs pin ls --type=recursive ${itemCid}`,
-      (error, stdout, stderr) => {
-        if (error || stderr) {
-          console.warn(
-            `Error checking pin status for CID ${itemCid}:`,
-            error || stderr
-          );
-          resolve(false); // If there's an error, assume it's not pinned
-        } else {
-          resolve(stdout.includes(itemCid)); // If the CID is listed, it's pinned
-        }
+    ipfs(`pin ls --type=recursive ${itemCid}`, (error, stdout, stderr) => {
+      if (error || stderr) {
+        console.warn(
+          `Error checking pin status for CID ${itemCid}:`,
+          error || stderr
+        );
+        resolve(false); // If there's an error, assume it's not pinned
+      } else {
+        resolve(stdout.includes(itemCid)); // If the CID is listed, it's pinned
       }
-    );
+    });
   });
 }
 
