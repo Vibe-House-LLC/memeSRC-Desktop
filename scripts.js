@@ -1,10 +1,10 @@
-const { exec, spawn, app } = require("child_process");
-const os = require("os");
-const path = require("path");
+const { ipcRenderer } = require('electron');
+const os = require('os');
+const path = require('path');
+const { exec, spawn } = require('child_process');
 
 let ipfsDaemon;
 let isDaemonOperating = false;
-let ipfsPath = null;
 
 function updateUIForStarting() {
   const statusElement = document.getElementById("daemonStatus");
@@ -25,40 +25,25 @@ function updateUIForStopping() {
 }
 
 function findIpfsLocation(callback) {
-  const homeDirectory = os.homedir();
-  const appDirectory = app.getAppPath();
+  // Assuming that the IPFS executable is in the root directory of your Electron app
+  const appRootPath = path.resolve(__dirname); // Use __dirname to get the path to your app's root directory
+  const ipfsExecutablePath = path.join(appRootPath, 'ipfs'); // Assuming 'ipfs' is directly in the root
 
-  const possiblePaths = [
-    path.join("/opt", "homebrew", "bin", "ipfs"),
-    path.join("/usr", "local", "bin", "ipfs"),
-    path.join("/usr", "bin", "ipfs"),
-    path.join(homeDirectory, "Desktop", "ipfs", "kubo"),
-    path.join(appDirectory, "ipfs"),
-  ];
-
-  let foundPath = null;
-  let checksCompleted = 0;
-
-  possiblePaths.forEach((path, index) => {
-    exec(`"${path}" --version`, (error, stdout, stderr) => {
-      checksCompleted++;
-      if (!foundPath && !error && stdout.includes("ipfs version")) {
-        foundPath = path;
-      }
-      if (checksCompleted === possiblePaths.length) {
-        callback(foundPath);
-      }
-    });
+  exec(`"${ipfsExecutablePath}" --version`, (error, stdout, stderr) => {
+    if (!error && stdout.includes("ipfs version")) {
+      callback(ipfsExecutablePath); // IPFS executable found
+    } else {
+      callback(null); // IPFS executable not found
+    }
   });
 }
 
 function startIpfsDaemon() {
-  if (!ipfsPath) return; // Don't proceed if IPFS path is not found
 
   updateUIForStarting();
   isDaemonOperating = true;
 
-  ipfsDaemon = spawn(ipfsPath, ["daemon"]);
+  ipfsDaemon = spawn("ipfs", ["daemon"]);
 
   ipfsDaemon.stdout.on("data", (data) => {
     console.log(`stdout: ${data}`);
@@ -76,8 +61,6 @@ function startIpfsDaemon() {
 }
 
 function stopIpfsDaemon() {
-  if (!ipfsPath) return; // Don't proceed if IPFS path is not found
-
   updateUIForStopping();
   isDaemonOperating = true;
 
@@ -87,7 +70,7 @@ function stopIpfsDaemon() {
     ipfsDaemon.kill();
   } else {
     console.log("Stopping IPFS Daemon via 'ipfs shutdown'");
-    exec(`"${ipfsPath}" shutdown`, (error, stdout, stderr) => {
+    exec(`ipfs shutdown`, (error, stdout, stderr) => {
       if (error) {
         console.error(`exec error: ${error}`);
         return;
@@ -104,9 +87,8 @@ function stopIpfsDaemon() {
 }
 
 function checkDaemonStatus() {
-  if (!ipfsPath) return; // Don't proceed if IPFS path is not found
 
-  exec(`"${ipfsPath}" swarm peers`, (error, stdout, stderr) => {
+  exec(`ipfs swarm peers`, (error, stdout, stderr) => {
     const statusElement = document.getElementById("daemonStatus");
     const toggleButton = document.getElementById("toggleDaemon");
     if (error || stderr) {
@@ -123,10 +105,10 @@ function checkDaemonStatus() {
   });
 }
 
-function fetchMetadata(ipfsPath, itemCid) {
+function fetchMetadata(itemCid) {
   return new Promise((resolve, reject) => {
     exec(
-      `"${ipfsPath}" cat ${itemCid}/00_metadata.json`,
+      `ipfs cat ${itemCid}/00_metadata.json`,
       (error, stdout, stderr) => {
         if (error || stderr) {
           console.warn(
@@ -154,7 +136,7 @@ function fetchMetadata(ipfsPath, itemCid) {
 function listIPFSDirectory() {
   const ipfsDirectory = "/memesrc/index/";
 
-  exec(`"${ipfsPath}" files stat ${ipfsDirectory}`, (error, stdout, stderr) => {
+  exec(`ipfs files stat ${ipfsDirectory}`, (error, stdout, stderr) => {
     if (error || stderr) {
       return console.error("Error listing IPFS directory:", error || stderr);
     }
@@ -162,7 +144,7 @@ function listIPFSDirectory() {
     const cid = stdout.split("\n")[0];
 
     exec(
-      `"${ipfsPath}" files stat /memesrc`,
+      `ipfs files stat /memesrc`,
       (memesrcError, memesrcStdout, memesrcStderr) => {
         if (memesrcError || memesrcStderr) {
           return console.error(
@@ -173,7 +155,7 @@ function listIPFSDirectory() {
 
         const memesrcCid = memesrcStdout.split("\n")[0];
 
-        exec(`"${ipfsPath}" ls ${cid}`, (lsError, lsStdout, lsStderr) => {
+        exec(`ipfs ls ${cid}`, (lsError, lsStdout, lsStderr) => {
           if (lsError || lsStderr) {
             return console.error(
               "Error listing directory contents:",
@@ -198,7 +180,7 @@ function listIPFSDirectory() {
             directories
               .filter((dir) => dir)
               .map((dir) =>
-                fetchMetadata(ipfsPath, dir.cid).then((metadata) => ({
+                fetchMetadata(dir.cid).then((metadata) => ({
                   ...dir,
                   index_name: metadata ? metadata.index_name : "N/A",
                 }))
@@ -216,10 +198,10 @@ function listIPFSDirectory() {
   });
 }
 
-function fetchPinStatus(ipfsPath, itemCid) {
+function fetchPinStatus(itemCid) {
   return new Promise((resolve, reject) => {
     exec(
-      `"${ipfsPath}" pin ls --type=recursive ${itemCid}`,
+      `ipfs pin ls --type=recursive ${itemCid}`,
       (error, stdout, stderr) => {
         if (error || stderr) {
           console.warn(
@@ -235,8 +217,8 @@ function fetchPinStatus(ipfsPath, itemCid) {
   });
 }
 
-function pinItem(ipfsPath, cid) {
-  exec(`"${ipfsPath}" pin add ${cid}`, (error, stdout, stderr) => {
+function pinItem(cid) {
+  exec(`ipfs pin add ${cid}`, (error, stdout, stderr) => {
     if (error || stderr) {
       console.error(`Error pinning CID ${cid}:`, error || stderr);
     } else {
@@ -245,8 +227,8 @@ function pinItem(ipfsPath, cid) {
   });
 }
 
-function unpinItem(ipfsPath, cid) {
-  exec(`"${ipfsPath}" pin rm ${cid}`, (error, stdout, stderr) => {
+function unpinItem(cid) {
+  exec(`ipfs pin rm ${cid}`, (error, stdout, stderr) => {
     if (error || stderr) {
       console.error(`Error unpinning CID ${cid}:`, error || stderr);
     } else {
@@ -257,9 +239,9 @@ function unpinItem(ipfsPath, cid) {
 
 function handlePinClick(cid, isChecked) {
   if (isChecked) {
-    pinItem(ipfsPath, cid);
+    pinItem(cid);
   } else {
-    unpinItem(ipfsPath, cid);
+    unpinItem(cid);
   }
 }
 
@@ -289,7 +271,7 @@ function updateIndexesTable(directories) {
     cidCell.textContent = directory.cid;
 
     // Fetch and update pin status
-    fetchPinStatus(ipfsPath, directory.cid).then((isPinned) => {
+    fetchPinStatus(directory.cid).then((isPinned) => {
       pinCheckbox.checked = isPinned;
       pinCheckbox.disabled = false;
     });
@@ -298,20 +280,9 @@ function updateIndexesTable(directories) {
 
 window.onload = () => {
   const toggleButton = document.getElementById("toggleDaemon");
-  const findIpfsPathButton = document.getElementById("findIpfsPathButton");
-  const ipfsPathResult = document.getElementById("ipfsPathResult");
 
-  findIpfsLocation((path) => {
-    if (path) {
-      ipfsPath = path; // Set the global IPFS path
-      // ipfsPathResult.innerHTML = `IPFS Path: ${path}`;
-      checkDaemonStatus(); // Call checkDaemonStatus after setting ipfsPath
-    } else {
-      // ipfsPathResult.innerHTML = "IPFS Path not found.";
-      checkDaemonStatus(); // Call checkDaemonStatus even if path not found
-    }
-    listIPFSDirectory();
-  });
+  checkDaemonStatus();
+  listIPFSDirectory();
 
   toggleButton.addEventListener("click", (e) => {
     e.preventDefault();
@@ -323,16 +294,5 @@ window.onload = () => {
         stopIpfsDaemon();
       }
     }
-  });
-
-  findIpfsPathButton.addEventListener("click", () => {
-    findIpfsLocation((path) => {
-      if (path) {
-        ipfsPath = path; // Update the global IPFS path
-        ipfsPathResult.innerHTML = `IPFS Path: ${path}`;
-      } else {
-        ipfsPathResult.innerHTML = "IPFS Path not found.";
-      }
-    });
   });
 };
