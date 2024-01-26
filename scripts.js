@@ -1,4 +1,7 @@
 const { exec, spawn } = require("child_process");
+const os = require('os');
+const path = require('path');
+
 let ipfsDaemon;
 let isDaemonOperating = false;
 let ipfsPath = null;
@@ -22,11 +25,13 @@ function updateUIForStopping() {
 }
 
 function findIpfsLocation(callback) {
+  const homeDirectory = os.homedir();
+
   const possiblePaths = [
-    "/opt/homebrew/bin/ipfs",
-    "/usr/local/bin/ipfs",
-    "/usr/bin/ipfs",
-    "C:\\Program Files\\IPFS\\ipfs.exe",
+    path.join("/opt", "homebrew", "bin", "ipfs"),
+    path.join("/usr", "local", "bin", "ipfs"),
+    path.join("/usr", "bin", "ipfs"),
+    path.join(homeDirectory, "Desktop", "ipfs", "kubo")
   ];
 
   let foundPath = null;
