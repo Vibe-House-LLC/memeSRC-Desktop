@@ -6,9 +6,27 @@ const { exec, spawn } = require("child_process");
 let ipfsDaemon;
 let isDaemonOperating = false;
 
-// Determine the IPFS executable name based on the operating system
-const ipfsExt = os.platform() === "win32" ? "ipfs.exe" : "ipfs";
-const ipfsExecutable = path.join(__dirname, ipfsExt);
+// Function to determine the correct binary name
+function getIpfsExecutable() {
+  const arch = os.arch(); // will return 'arm64' for ARM-based 64-bit architectures and 'x64' for Intel-based 64-bit architectures
+  let platform = os.platform(); // will return 'darwin' for macOS and 'win32' for Windows
+  let binaryName = 'ipfs'; // default binary name
+
+  if (platform === 'darwin' && arch === 'arm64') {
+    // macOS with ARM64 architecture
+    binaryName = 'kubo_v0.26.0_darwin-arm64';
+  } else if (platform === 'darwin' && arch === 'x64') {
+    // macOS with Intel architecture
+    binaryName = 'kubo_v0.26.0_darwin-amd64';
+  } else if (platform === 'win32' && arch === 'x64') {
+    // Windows with Intel architecture
+    binaryName = 'kubo_v0.26.0_windows-amd64.exe';
+  }
+
+  return path.join(__dirname, binaryName);
+}
+
+const ipfsExecutable = getIpfsExecutable();
 console.log(ipfsExecutable);
 
 function updateUIForStarting() {
@@ -50,9 +68,10 @@ function startIpfsDaemon() {
   ipfsDaemon.on("close", (code) => {
     console.log(`IPFS daemon process exited with code ${code}`);
   });
-
-  setTimeout(checkDaemonStatus, 3000); // Check status after a delay to allow for startup
 }
+
+
+// kubo_v0.26.0_darwin-arm64
 
 function stopIpfsDaemon() {
   updateUIForStopping();
@@ -77,7 +96,6 @@ function stopIpfsDaemon() {
       }
     });
   }
-  setTimeout(checkDaemonStatus, 3000); // Check status after a delay to allow for shutdown
 }
 
 let lastIpfsStatus = null;
@@ -379,5 +397,5 @@ window.onload = () => {
 
   // Keep things up to date
   setInterval(checkDaemonStatus, 5000);
-  setInterval(listIPFSDirectory, 30000);
+  setInterval(listIPFSDirectory, 60000);
 };
