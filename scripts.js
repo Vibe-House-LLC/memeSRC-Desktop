@@ -6,6 +6,11 @@ const { exec, spawn } = require("child_process");
 let ipfsDaemon;
 let isDaemonOperating = false;
 
+// Determine the IPFS executable name based on the operating system
+const ipfsExt = os.platform() === "win32" ? "ipfs.exe" : "ipfs";
+const ipfsExecutable = path.join(__dirname, ipfsExt);
+console.log(ipfsExecutable);
+
 function updateUIForStarting() {
   const statusElement = document.getElementById("daemonStatus");
   const toggleButton = document.getElementById("toggleDaemon");
@@ -23,10 +28,6 @@ function updateUIForStopping() {
   toggleButton.textContent = "Please wait...";
   toggleButton.disabled = true;
 }
-
-// Determine the IPFS executable name based on the operating system
-const ipfsExt = os.platform() === "win32" ? "ipfs.exe" : "ipfs";
-const ipfsExecutable = path.join(__dirname, ipfsExt);
 
 function ipfs(commandString, callback) {
   exec(`${ipfsExecutable} ${commandString}`, callback);
@@ -356,7 +357,7 @@ window.onload = () => {
       }
     }
   });
-  
+
   const submitCidButton = document.getElementById("submitCid");
   submitCidButton.addEventListener("click", handleCidSubmission);
 };
