@@ -80,26 +80,39 @@ function stopIpfsDaemon() {
   setTimeout(checkDaemonStatus, 3000); // Check status after a delay to allow for shutdown
 }
 
+let lastIpfsStatus = null;
+
 function checkDaemonStatus() {
   return new Promise((resolve, reject) => {
     ipfs(`swarm peers`, (error, stdout, stderr) => {
       const statusElement = document.getElementById("daemonStatus");
       const toggleButton = document.getElementById("toggleDaemon");
+      let currentStatus;
 
       if (error || stderr) {
         statusElement.innerHTML = "IPFS is not running";
         statusElement.className = "status-indicator not-running";
         toggleButton.textContent = "Turn on IPFS";
-        resolve(false);
+        currentStatus = false;
       } else {
         statusElement.innerHTML = "IPFS is running";
         statusElement.className = "status-indicator running";
         toggleButton.textContent = "Turn off IPFS";
-        resolve(true);
+        currentStatus = true;
       }
+
+      // If the status has changed, update the list and the last known status
+      if (lastIpfsStatus !== currentStatus) {
+        lastIpfsStatus = currentStatus;
+        listIPFSDirectory(); 
+      }
+
+      resolve(currentStatus);
     });
   });
 }
+
+
 
 function fetchMetadata(itemCid) {
   return new Promise((resolve, reject) => {
@@ -128,8 +141,11 @@ function fetchMetadata(itemCid) {
 
 function listIPFSDirectory() {
   checkDaemonStatus().then((connected) => {
+    const tableBody = document.getElementById("ipfsIndexesList");
+
     if (!connected) {
-      console.log("Didn't load index list since IPFS daemon is not running");
+      console.log("IPFS daemon is not running - clearing index list");
+      tableBody.innerHTML = ""; // Clear the list if the daemon is not running
     } else {
       // Function to create a directory if it doesn't exist
       function createDirIfNotExist(dir) {
@@ -360,4 +376,8 @@ window.onload = () => {
 
   const submitCidButton = document.getElementById("submitCid");
   submitCidButton.addEventListener("click", handleCidSubmission);
+
+  // Keep things up to date
+  setInterval(checkDaemonStatus, 5000);
+  setInterval(listIPFSDirectory, 30000);
 };
