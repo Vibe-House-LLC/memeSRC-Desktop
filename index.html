@@ -1,58 +1,63 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <link rel="stylesheet" type="text/css" href="styles.css" />
-    <script type="text/javascript" src="scripts.js"></script>
-  </head>
-  <body>
-    <h1>memeSRC Settings</h1>
-    <div class="daemon-control">
-      <div class="status-indicator" id="daemonStatus">Checking status...</div>
-      <button id="toggleDaemon" class="toggle-button">Toggle Daemon</button>
-      <button id="findIpfsPathButton" class="toggle-button">
-        Show IPFS Path
-      </button>
-      <div id="ipfsPathResult"></div>
+<head>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" type="text/css" href="styles.css">
+  <script type="text/javascript" src="scripts.js"></script>
+</head>
+<body class="container py-4">
+  <h1 class="text-center mb-4">memeSRC Settings</h1>
+  <div class="card mb-4">
+    <div class="card-header">
+      Network Connection
     </div>
-
-    <div class="bandwidth-stats">
-      <h2>Bandwidth Stats</h2>
-      <div id="bandwidthStats">
-        <p>Total In: <span id="totalIn">0 kB</span></p>
-        <p>Total Out: <span id="totalOut">0 kB</span></p>
-        <p>Rate In: <span id="rateIn">0 kB/s</span></p>
-        <p>Rate Out: <span id="rateOut">0 kB/s</span></p>
-      </div>
-    </div>
-
-    <center>
-      <div class="ipfs-indexes">
-        <h2>Indexes</h2>
-        <table id="ipfsIndexesTable">
-          <thead>
-            <tr>
-              <th>Pin</th>
-              <th>Name</th>
-              <th>CID</th>
-            </tr>
-          </thead>
-          <tbody id="ipfsIndexesList">
-            <!-- Directory entries will be populated here -->
-          </tbody>
-        </table>
-
-        <!-- CID Input Form -->
-        <div class="cid-input-form">
-          <label for="cidInput">Add Index:</label>
-          <input
-            type="text"
-            id="cidInput"
-            name="cidInput"
-            placeholder="CID (Content Identifier)"
-          />
-          <button type="button" id="submitCid">Import</button>
+    <div class="card-body">
+      <div class="row align-items-center">
+        <!-- IPFS Status -->
+        <div class="col-lg-4 mb-3 mb-lg-0">
+          <div class="status-indicator" id="daemonStatus">(...)</div>
+          <button id="toggleDaemon" class="btn btn-outline-primary mt-2 w-100">(...)</button>
+        </div>
+        <!-- Bandwidth Stats -->
+        <div class="col-lg-8">
+          <div class="d-flex justify-content-between">
+            <div>Total In: <span id="totalIn">(...)</span></div>
+            <div>Total Out: <span id="totalOut">(...)</span></div>
+          </div>
+          <div class="d-flex justify-content-between mt-2">
+            <div>Rate In: <span id="rateIn">(...)</span></div>
+            <div>Rate Out: <span id="rateOut">(...)</span></div>
+          </div>
         </div>
       </div>
-    </center>
-  </body>
+    </div>
+  </div>
+
+  <!-- Main Section for Indexes -->
+  <div class="card">
+    <div class="card-header">
+      My Indexes
+    </div>
+    <div class="card-body">
+      <table class="table" id="ipfsIndexesTable">
+        <thead>
+          <tr>
+            <th>Pin</th>
+            <th>Name</th>
+            <th>CID</th>
+          </tr>
+        </thead>
+        <tbody id="ipfsIndexesList">
+          <!-- Directory entries will be populated here -->
+        </tbody>
+      </table>
+
+      <!-- CID Input Form -->
+      <div class="input-group mb-3">
+        <input type="text" id="cidInput" name="cidInput" class="form-control" placeholder="CID (Content Identifier)">
+        <button type="button" id="submitCid" class="btn btn-primary">Import</button>
+      </div>
+    </div>
+  </div>
+</body>
 </html>

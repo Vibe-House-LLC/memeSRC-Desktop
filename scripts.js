@@ -32,7 +32,7 @@ console.log(ipfsExecutable);
 function updateUIForStarting() {
   const statusElement = document.getElementById("daemonStatus");
   const toggleButton = document.getElementById("toggleDaemon");
-  statusElement.innerHTML = "IPFS is starting";
+  statusElement.innerHTML = "Connecting...";
   statusElement.className = "status-indicator changing";
   toggleButton.textContent = "Please wait...";
   toggleButton.disabled = true;
@@ -41,7 +41,7 @@ function updateUIForStarting() {
 function updateUIForStopping() {
   const statusElement = document.getElementById("daemonStatus");
   const toggleButton = document.getElementById("toggleDaemon");
-  statusElement.innerHTML = "IPFS is stopping";
+  statusElement.innerHTML = "Disconnecting...";
   statusElement.className = "status-indicator changing";
   toggleButton.textContent = "Please wait...";
   toggleButton.disabled = true;
@@ -107,14 +107,14 @@ function checkDaemonStatus() {
       let currentStatus;
 
       if (error || stderr) {
-        statusElement.innerHTML = "IPFS is not running";
+        statusElement.innerHTML = "Disconnected";
         statusElement.className = "status-indicator not-running";
-        toggleButton.textContent = "Turn on IPFS";
+        toggleButton.textContent = "Connect";
         currentStatus = false;
       } else {
-        statusElement.innerHTML = "IPFS is running";
+        statusElement.innerHTML = "Connected";
         statusElement.className = "status-indicator running";
-        toggleButton.textContent = "Turn off IPFS";
+        toggleButton.textContent = "Disconnect";
         currentStatus = true;
       }
 
@@ -361,7 +361,7 @@ function updateIndexesTable(directories) {
 
     // Set classes for styling
     indexNameCell.className = "name";
-    cidCell.className = "cid";
+    cidCell.className = "cid-monospace"; // Apply the monospace class to the CID cell
 
     // Checkbox for pin status
     const pinCheckbox = document.createElement("input");
