@@ -4,11 +4,9 @@ This is the starter project for the memeSRC Desktop app.
 
 ## Getting Started
 
-### Prerequisites
+**Prerequisite**: [Install Node.js](https://nodejs.org/en/download)
 
-- [Install Node.js](https://nodejs.org/en/download)
-
-### Installation
+### Install memeSRC Desktop
 
 ```bash
 git clone git@github.com:Vibe-House-LLC/memeSRC-Desktop.git
@@ -16,7 +14,7 @@ cd memeSRC-Desktop
 npm install
 ```
 
-### Start the app
+### Start memeSRC Desktop
 
 ```bash
 npm run start-prod
