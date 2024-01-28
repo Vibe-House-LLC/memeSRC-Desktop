@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
   <head>
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="stylesheet" type="text/css" href="styles.css" />
     <script type="text/javascript" src="scripts.js"></script>
   </head>
   <body>
@@ -15,29 +15,44 @@
       <div id="ipfsPathResult"></div>
     </div>
 
-    <center>
-    <div class="ipfs-indexes">
-      <h2>Indexes</h2>
-      <table id="ipfsIndexesTable">
-        <thead>
-          <tr>
-            <th>Pin</th>
-            <th>Name</th>
-            <th>CID</th>
-          </tr>
-        </thead>
-        <tbody id="ipfsIndexesList">
-          <!-- Directory entries will be populated here -->
-        </tbody>
-      </table>
-
-      <!-- CID Input Form -->
-      <div class="cid-input-form">
-        <label for="cidInput">Add Index:</label>
-        <input type="text" id="cidInput" name="cidInput" placeholder="CID (Content Identifier)">
-        <button type="button" id="submitCid">Import</button>
+    <div class="bandwidth-stats">
+      <h2>Bandwidth Stats</h2>
+      <div id="bandwidthStats">
+        <p>Total In: <span id="totalIn">0 kB</span></p>
+        <p>Total Out: <span id="totalOut">0 kB</span></p>
+        <p>Rate In: <span id="rateIn">0 kB/s</span></p>
+        <p>Rate Out: <span id="rateOut">0 kB/s</span></p>
       </div>
     </div>
+
+    <center>
+      <div class="ipfs-indexes">
+        <h2>Indexes</h2>
+        <table id="ipfsIndexesTable">
+          <thead>
+            <tr>
+              <th>Pin</th>
+              <th>Name</th>
+              <th>CID</th>
+            </tr>
+          </thead>
+          <tbody id="ipfsIndexesList">
+            <!-- Directory entries will be populated here -->
+          </tbody>
+        </table>
+
+        <!-- CID Input Form -->
+        <div class="cid-input-form">
+          <label for="cidInput">Add Index:</label>
+          <input
+            type="text"
+            id="cidInput"
+            name="cidInput"
+            placeholder="CID (Content Identifier)"
+          />
+          <button type="button" id="submitCid">Import</button>
+        </div>
+      </div>
     </center>
   </body>
 </html>

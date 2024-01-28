@@ -10,17 +10,17 @@ let isDaemonOperating = false;
 function getIpfsExecutable() {
   const arch = os.arch(); // will return 'arm64' for ARM-based 64-bit architectures and 'x64' for Intel-based 64-bit architectures
   let platform = os.platform(); // will return 'darwin' for macOS and 'win32' for Windows
-  let binaryName = 'ipfs'; // default binary name
+  let binaryName = "ipfs"; // default binary name
 
-  if (platform === 'darwin' && arch === 'arm64') {
+  if (platform === "darwin" && arch === "arm64") {
     // macOS with ARM64 architecture
-    binaryName = 'kubo_v0.26.0_darwin-arm64';
-  } else if (platform === 'darwin' && arch === 'x64') {
+    binaryName = "kubo_v0.26.0_darwin-arm64";
+  } else if (platform === "darwin" && arch === "x64") {
     // macOS with Intel architecture
-    binaryName = 'kubo_v0.26.0_darwin-amd64';
-  } else if (platform === 'win32' && arch === 'x64') {
+    binaryName = "kubo_v0.26.0_darwin-amd64";
+  } else if (platform === "win32" && arch === "x64") {
     // Windows with Intel architecture
-    binaryName = 'kubo_v0.26.0_windows-amd64.exe';
+    binaryName = "kubo_v0.26.0_windows-amd64.exe";
   }
 
   return path.join(__dirname, binaryName);
@@ -69,7 +69,6 @@ function startIpfsDaemon() {
     console.log(`IPFS daemon process exited with code ${code}`);
   });
 }
-
 
 // kubo_v0.26.0_darwin-arm64
 
@@ -122,15 +121,21 @@ function checkDaemonStatus() {
       // If the status has changed, update the list and the last known status
       if (lastIpfsStatus !== currentStatus) {
         lastIpfsStatus = currentStatus;
-        listIPFSDirectory(); 
+        listIPFSDirectory();
       }
+
+      fetchBandwidthStats()
+        .then((stats) => {
+          updateBandwidthStatsUI(stats);
+        })
+        .catch((error) => {
+          console.error("Failed to fetch bandwidth stats:", error);
+        });
 
       resolve(currentStatus);
     });
   });
 }
-
-
 
 function fetchMetadata(itemCid) {
   return new Promise((resolve, reject) => {
@@ -155,6 +160,38 @@ function fetchMetadata(itemCid) {
       }
     });
   });
+}
+
+function fetchBandwidthStats() {
+  return new Promise((resolve, reject) => {
+    ipfs("stats bw", (error, stdout, stderr) => {
+      if (error || stderr) {
+        console.error("Error fetching bandwidth stats:", error || stderr);
+        reject(error || stderr);
+      } else {
+        resolve(parseBandwidthStats(stdout));
+      }
+    });
+  });
+}
+
+function parseBandwidthStats(output) {
+  const stats = {};
+  const lines = output.split("\n");
+  lines.forEach((line) => {
+    if (line.includes(":")) {
+      const [key, value] = line.split(":").map((item) => item.trim());
+      stats[key] = value;
+    }
+  });
+  return stats;
+}
+
+function updateBandwidthStatsUI(stats) {
+  document.getElementById("totalIn").textContent = stats["TotalIn"] || "0 kB";
+  document.getElementById("totalOut").textContent = stats["TotalOut"] || "0 kB";
+  document.getElementById("rateIn").textContent = stats["RateIn"] || "0 kB/s";
+  document.getElementById("rateOut").textContent = stats["RateOut"] || "0 kB/s";
 }
 
 function listIPFSDirectory() {
@@ -370,9 +407,8 @@ function addCidToIndex(cid) {
   });
 
   // Clear the input field after submission
-  document.getElementById("cidInput").value = '';
+  document.getElementById("cidInput").value = "";
 }
-
 
 window.onload = () => {
   const toggleButton = document.getElementById("toggleDaemon");
