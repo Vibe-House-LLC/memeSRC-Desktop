@@ -1,6 +1,6 @@
 # memeSRC Desktop
 
-This is the starter project for the memeSRC Desktop app, which currently supports Windows and macOS.
+Starter project for memeSRC Desktop on Windows & macOS
 
 ## Getting Started
 
