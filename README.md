@@ -1,20 +1,20 @@
 # memeSRC Desktop
 
-This is the starter project for the memeSRC Desktop app.
+This is the starter project for the memeSRC Desktop app, which currently supports Windows and macOS.
 
 ## Getting Started
 
 **Prerequisite**: [Install Node.js](https://nodejs.org/en/download)
 
-### Install memeSRC Desktop
+### 1. Install memeSRC Desktop
 
 ```bash
-git clone git@github.com:Vibe-House-LLC/memeSRC-Desktop.git
+git clone https://github.com/Vibe-House-LLC/memeSRC-Desktop.git
 cd memeSRC-Desktop
 npm install
 ```
 
-### Start memeSRC Desktop
+### 2. Start memeSRC Desktop
 
 ```bash
 npm run start-prod
