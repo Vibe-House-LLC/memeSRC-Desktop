@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const { exec } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 
@@ -28,25 +28,17 @@ function createMainWindow() {
         mainWindow.webContents.openDevTools();
     }
 
-    mainWindow.loadFile(path.join(__dirname, './index.html'));
-    // mainWindow.loadURL('https://beta.memesrc.com/')
+    // mainWindow.loadFile(path.join(__dirname, './index.html'));
+    mainWindow.loadURL('https://beta.memesrc.com/')
 
     mainWindowState.manage(mainWindow);
-}
 
-function runSystemCommand() {
-    exec('ls', (error, stdout, stderr) => {
-        if (error) {
-            console.error(`exec error: ${error}`);
-            return;
-        }
-
-        console.log(`stdout: ${stdout}`);
-        if (stderr) {
-            console.error(`stderr: ${stderr}`);
-        }
+    ipcMain.on('load-index-html', () => {
+        mainWindow.loadFile(path.join(__dirname, './index.html'));
     });
 }
+
+
 
 app.whenReady().then(() => {
     createMainWindow();
@@ -63,3 +55,4 @@ app.on('window-all-closed', () => {
         app.quit();
     }
 });
+

@@ -1,5 +1,3 @@
-const { ipcRenderer } = require("electron");
-const os = require("os");
 const path = require("path");
 const { exec, spawn } = require("child_process");
 
