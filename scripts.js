@@ -6,28 +6,9 @@ const { exec, spawn } = require("child_process");
 let ipfsDaemon;
 let isDaemonOperating = false;
 
-// Function to determine the correct binary name
-function getIpfsExecutable() {
-  const arch = os.arch(); // will return 'arm64' for ARM-based 64-bit architectures and 'x64' for Intel-based 64-bit architectures
-  let platform = os.platform(); // will return 'darwin' for macOS and 'win32' for Windows
-  let binaryName = "ipfs"; // default binary name
+const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
 
-  if (platform === "darwin" && arch === "arm64") {
-    // macOS with ARM64 architecture
-    binaryName = "kubo_v0.26.0_darwin-arm64";
-  } else if (platform === "darwin" && arch === "x64") {
-    // macOS with Intel architecture
-    binaryName = "kubo_v0.26.0_darwin-amd64";
-  } else if (platform === "win32" && arch === "x64") {
-    // Windows with Intel architecture
-    binaryName = "kubo_v0.26.0_windows-amd64.exe";
-  }
-
-  return path.join(__dirname, binaryName);
-}
-
-const ipfsExecutable = getIpfsExecutable();
-console.log(ipfsExecutable);
+console.log(`IPFS EXE: ${ipfsExecutable}`)
 
 function updateUIForStarting() {
   const statusElement = document.getElementById("daemonStatus");
