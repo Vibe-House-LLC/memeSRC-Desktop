@@ -2,7 +2,9 @@ import os
 import sys
 import csv
 import json
+import srt
 import re
+import base64
 import zipfile
 from pathlib import Path
 import subprocess
@@ -44,28 +46,54 @@ def extract_season_episode(episode_file):
 
 def list_content_files():
     content_files = {
-        "videos": []
+        "videos": [],
+        "subtitles": []
     }
     valid_video_extensions = {".mp4", ".mkv", ".avi", ".mov"}
+    valid_subtitle_extensions = {".srt"}
 
     for (dirpath, dirnames, filenames) in os.walk(input_path):
         for file in filenames:
             if any(file.endswith(ext) for ext in valid_video_extensions):
                 content_files["videos"].append(os.path.join(dirpath, file))
+            elif any(file.endswith(ext) for ext in valid_subtitle_extensions):
+                content_files["subtitles"].append(os.path.join(dirpath, file))
     return content_files
 
-def create_zip_files_for_frames(frames_dir, batch_size=100):
+def create_zip_files_for_frames(frames_dir, fps=10, batch_size=100):
     frame_files = sorted(f for f in os.listdir(frames_dir) if f.endswith('.jpg'))
+    thumbnails = set(frame_files[::fps])
+
     for i in range(0, len(frame_files), batch_size):
         batch_files = frame_files[i:i+batch_size]
-        zip_file_path = os.path.join(frames_dir, f"frames_{i//batch_size:03}.zip")
+        zip_file_path = os.path.join(frames_dir, f"b{i//batch_size + 1}.zip")
         with zipfile.ZipFile(zip_file_path, 'w') as zipf:
             for file in batch_files:
                 file_path = os.path.join(frames_dir, file)
                 zipf.write(file_path, file)
-                os.remove(file_path)  # Optional: remove the frame after adding to zip
+                if file not in thumbnails:
+                    os.remove(file_path)
 
-def process_episode(episode_file, frames_base_dir):
+    for i, thumbnail in enumerate(sorted(thumbnails)):
+        old_path = os.path.join(frames_dir, thumbnail)
+        new_name = f"t{i + 1}.jpg"
+        new_path = os.path.join(frames_dir, new_name)
+        os.rename(old_path, new_path)
+
+def parse_srt(srt_file):
+    with open(srt_file, 'r', encoding='utf-8') as f:
+        subtitles = list(srt.parse(f.read()))
+    return subtitles
+
+def find_matching_subtitle(episode_file, subtitles):
+    episode_season_episode = extract_season_episode(episode_file)
+    for subtitle_file in subtitles:
+        subtitle_season_episode = extract_season_episode(subtitle_file)
+        if episode_season_episode == subtitle_season_episode:
+            return subtitle_file
+    return None
+
+def process_episode(episode_file, frames_base_dir, content_files):
     season_num, episode_num = extract_season_episode(episode_file)
     simplified_episode_name = f"{season_num}-{episode_num}"
     episode_dir = os.path.join(frames_base_dir, simplified_episode_name)
@@ -76,6 +104,23 @@ def process_episode(episode_file, frames_base_dir):
 
     create_zip_files_for_frames(episode_dir)
 
+    matching_subtitle = find_matching_subtitle(episode_file, content_files["subtitles"])
+    if matching_subtitle:
+        subtitles = parse_srt(matching_subtitle)
+        csv_path = os.path.join(episode_dir, "_docs.csv")
+        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['subtitle_index', 'subtitle_text', 'start_time', 'end_time']
+            csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            csv_writer.writeheader()
+            for index, subtitle in enumerate(subtitles):
+                encoded_subtitle = base64.b64encode(subtitle.content.encode()).decode()
+                csv_writer.writerow({
+                    "subtitle_index": index,
+                    "subtitle_text": encoded_subtitle,
+                    "start_time": get_timecode_str(subtitle.start),
+                    "end_time": get_timecode_str(subtitle.end)
+                })
+
 def process_content(input_path_param, index_name):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(index_name)
@@ -84,7 +129,7 @@ def process_content(input_path_param, index_name):
     content_files = list_content_files()
 
     for episode_file in content_files["videos"]:
-        process_episode(episode_file, frames_base_dir)
+        process_episode(episode_file, frames_base_dir, content_files)
 
 def ensure_dir_exists(directory):
     if not os.path.exists(directory):
