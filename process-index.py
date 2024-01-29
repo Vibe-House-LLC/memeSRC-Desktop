@@ -113,22 +113,19 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_
         subtitles = parse_srt(matching_subtitle)
         csv_path = os.path.join(episode_dir, "_docs.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['subtitle_index', 'subtitle_text', 'start_frame', 'end_frame', 'thumbnails', 'bundles']
+            fieldnames = ['subtitle_index', 'subtitle_text', 'start_frame', 'end_frame']
             csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             csv_writer.writeheader()
             for index, subtitle in enumerate(subtitles):
                 start_index = get_frame_index(subtitle.start, fps)
                 end_index = get_frame_index(subtitle.end, fps)
-                thumbnails, bundles, start_frame, end_frame = calculate_related_files(start_index, end_index, fps, batch_size)
 
                 encoded_subtitle = base64.b64encode(subtitle.content.encode()).decode()
                 csv_writer.writerow({
                     "subtitle_index": index,
                     "subtitle_text": encoded_subtitle,
-                    "start_frame": start_frame,
-                    "end_frame": end_frame,
-                    "thumbnails": json.dumps(thumbnails),
-                    "bundles": json.dumps(bundles)
+                    "start_frame": start_index,
+                    "end_frame": end_index
                 })
 
 def process_content(input_path_param, index_name):
