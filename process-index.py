@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 import subprocess
 import yaml
+from datetime import timedelta
 
 # Load configuration
 with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
@@ -31,6 +32,9 @@ def get_timecode_str(time_delta):
     seconds = total_seconds % 60
     milliseconds = int(time_delta.microseconds / 1000)
     return f"{hours:02}:{minutes:02}:{seconds:02}.{milliseconds:03}"
+
+def get_frame_index(time_delta, fps):
+    return int(time_delta.total_seconds() * fps)
 
 def extract_all_frames(episode_file, frames_dir, frame_prefix, fps=9):
     subprocess.run([FFMPEG_PATH, "-i", episode_file, "-r", str(fps), "-qscale:v", "5", 
@@ -93,7 +97,18 @@ def find_matching_subtitle(episode_file, subtitles):
             return subtitle_file
     return None
 
-def process_episode(episode_file, frames_base_dir, content_files):
+def calculate_related_files(start_index, end_index, fps, batch_size):
+    start_thumbnail = (start_index // fps) + 1
+    end_thumbnail = (end_index // fps) + 1
+    thumbnails = [f"t{i}.jpg" for i in range(start_thumbnail, end_thumbnail + 1)]
+
+    start_bundle = (start_index // batch_size) + 1
+    end_bundle = (end_index // batch_size) + 1
+    bundles = [f"b{i}.zip" for i in range(start_bundle, end_bundle + 1)]
+
+    return thumbnails, bundles
+
+def process_episode(episode_file, frames_base_dir, content_files, fps=9, batch_size=100):
     season_num, episode_num = extract_season_episode(episode_file)
     simplified_episode_name = f"{season_num}-{episode_num}"
     episode_dir = os.path.join(frames_base_dir, simplified_episode_name)
@@ -102,23 +117,29 @@ def process_episode(episode_file, frames_base_dir, content_files):
     frame_prefix = f"episode_{season_num}-{episode_num}_frame"
     extract_all_frames(episode_file, episode_dir, frame_prefix)
 
-    create_zip_files_for_frames(episode_dir)
+    create_zip_files_for_frames(episode_dir, fps, batch_size)
 
     matching_subtitle = find_matching_subtitle(episode_file, content_files["subtitles"])
     if matching_subtitle:
         subtitles = parse_srt(matching_subtitle)
         csv_path = os.path.join(episode_dir, "_docs.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['subtitle_index', 'subtitle_text', 'start_time', 'end_time']
+            fieldnames = ['subtitle_index', 'subtitle_text', 'start_time', 'end_time', 'thumbnails', 'bundles']
             csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             csv_writer.writeheader()
             for index, subtitle in enumerate(subtitles):
+                start_index = get_frame_index(subtitle.start, fps)
+                end_index = get_frame_index(subtitle.end, fps)
+                thumbnails, bundles = calculate_related_files(start_index, end_index, fps, batch_size)
+
                 encoded_subtitle = base64.b64encode(subtitle.content.encode()).decode()
                 csv_writer.writerow({
                     "subtitle_index": index,
                     "subtitle_text": encoded_subtitle,
                     "start_time": get_timecode_str(subtitle.start),
-                    "end_time": get_timecode_str(subtitle.end)
+                    "end_time": get_timecode_str(subtitle.end),
+                    "thumbnails": json.dumps(thumbnails),
+                    "bundles": json.dumps(bundles)
                 })
 
 def process_content(input_path_param, index_name):
