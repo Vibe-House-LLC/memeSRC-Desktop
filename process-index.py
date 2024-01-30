@@ -1,14 +1,13 @@
 import os
 import sys
 import csv
-import json
-import srt
 import re
 import base64
 import zipfile
-from pathlib import Path
 import subprocess
 import yaml
+import srt
+from pathlib import Path
 
 # Load configuration
 with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
@@ -39,6 +38,17 @@ def extract_season_episode(episode_file):
     season_num = int(SE_nums[0])
     episode_num = int(SE_nums[1])
     return (season_num, episode_num)
+
+def extract_season_episode_from_path(path):
+    parts = Path(path).parts
+    season_num, episode_num = None, None
+
+    # Assuming the last two parts are season and episode numbers respectively
+    if len(parts) >= 2:
+        season_num = parts[-2].isdigit() and int(parts[-2]) or None
+        episode_num = parts[-1].isdigit() and int(parts[-1]) or None
+
+    return season_num, episode_num
 
 def list_content_files():
     content_files = {
@@ -100,8 +110,10 @@ def calculate_related_files(start_index, end_index, fps, batch_size):
 
 def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_size=100):
     season_num, episode_num = extract_season_episode(episode_file)
-    simplified_episode_name = f"{season_num}-{episode_num}"
-    episode_dir = os.path.join(frames_base_dir, simplified_episode_name)
+    season_dir = os.path.join(frames_base_dir, str(season_num))
+    os.makedirs(season_dir, exist_ok=True)
+
+    episode_dir = os.path.join(season_dir, str(episode_num))
     os.makedirs(episode_dir, exist_ok=True)
 
     extract_all_frames(episode_file, episode_dir)
@@ -128,6 +140,35 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_
                     "end_frame": end_index
                 })
 
+def aggregate_csv_data(directory):
+    aggregated_data = []
+    for subdir, dirs, files in os.walk(directory):
+        season_num, episode_num = extract_season_episode_from_path(subdir)
+        for file in files:
+            if file.endswith('_docs.csv'):
+                with open(os.path.join(subdir, file), 'r', encoding='utf-8') as csvfile:
+                    csv_reader = csv.DictReader(csvfile)
+                    for row in csv_reader:
+                        if season_num is not None:
+                            row['season'] = season_num
+                        if episode_num is not None:
+                            row['episode'] = episode_num
+                        aggregated_data.append(row)
+    return aggregated_data
+
+def write_aggregated_csv(data, path):
+    if data:
+        with open(path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['season', 'episode', 'subtitle_index', 'subtitle_text', 'start_frame', 'end_frame']
+            csv_writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            csv_writer.writeheader()
+            for row in data:
+                csv_writer.writerow(row)
+
+def ensure_dir_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
 def process_content(input_path_param, index_name):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(index_name)
@@ -138,9 +179,16 @@ def process_content(input_path_param, index_name):
     for episode_file in content_files["videos"]:
         process_episode(episode_file, frames_base_dir, content_files)
 
-def ensure_dir_exists(directory):
-    if not os.path.exists(directory):
-        os.makedirs(directory)
+    # Aggregate and write CSV data for each season
+    for season_dir in os.listdir(frames_base_dir):
+        season_path = os.path.join(frames_base_dir, season_dir)
+        if os.path.isdir(season_path):
+            season_data = aggregate_csv_data(season_path)
+            write_aggregated_csv(season_data, os.path.join(season_path, '_docs.csv'))
+
+    # Aggregate and write CSV data for top level
+    top_level_data = aggregate_csv_data(frames_base_dir)
+    write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
