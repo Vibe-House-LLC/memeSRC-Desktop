@@ -269,9 +269,6 @@
             <p class="subtitle">${result.subtitle_text}</p>
             <p>Score: ${result.score}</p> <!-- Display score for each result -->
         `;
-          // Add base64 subtitle text to the HTML
-          resultItem.innerHTML += `<p class="subtitle-base64">Base64: ${result.base64_subtitle}</p>`;
-
           document.getElementById("results").appendChild(resultItem);
         });
       }
