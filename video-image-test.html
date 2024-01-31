@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frame Extractor</title>
+    <style>
+      /* Previous styles remain unchanged */
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      #controls,
+      #downloadButton {
+        margin-bottom: 20px;
+      }
+      #extractedFrame {
+        max-width: 90%;
+        max-height: 80vh;
+        margin: 20px 0;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        border-radius: 4px;
+        object-fit: contain;
+      }
+      input,
+      button {
+        margin: 5px;
+        padding: 10px;
+        font-size: 16px;
+      }
+      button {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <input type="text" id="videoURL" placeholder="Enter video URL" />
+      <input type="number" id="frameTime" placeholder="Time in seconds" />
+      <button id="loadVideo">Load Video</button>
+      <button id="extractFrame">Extract Frame</button>
+    </div>
+    <img id="extractedFrame" />
+    <button id="downloadButton" style="display: none">Download Image</button>
+
+    <script>
+      const videoURL = document.getElementById("videoURL");
+      const video = document.createElement("video");
+      const loadVideo = document.getElementById("loadVideo");
+      const frameTime = document.getElementById("frameTime");
+      const extractFrame = document.getElementById("extractFrame");
+      const extractedFrame = document.getElementById("extractedFrame");
+      const downloadButton = document.getElementById("downloadButton");
+
+      loadVideo.onclick = function () {
+        video.src = videoURL.value;
+        video.load();
+      };
+
+      extractFrame.onclick = function () {
+        video.currentTime = parseFloat(frameTime.value);
+      };
+
+      video.addEventListener("seeked", function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const context = canvas.getContext("2d");
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const imageUrl = canvas.toDataURL("image/png");
+        extractedFrame.src = imageUrl;
+        extractedFrame.style.display = "block";
+        downloadButton.style.display = "inline"; // Show the download button
+        downloadButton.onclick = function () {
+          const link = document.createElement("a");
+          link.href = imageUrl;
+          link.download = "extracted_frame.png"; // Set the default filename for the download
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+      });
+    </script>
+  </body>
+</html>
