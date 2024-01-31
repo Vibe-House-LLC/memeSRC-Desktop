@@ -253,23 +253,30 @@
 
         document.getElementById("results").innerHTML = "";
         results.forEach((result) => {
-          // Calculate the thumbnail index
-          const thumbnail_index = Math.ceil(result.start_frame / 10) + 1; // offsetting by +1 seconds to test something; TODO: remove this
+          // Calculate the range of thumbnail indexes
+          const startThumbnailIndex = Math.ceil(result.start_frame / 10);
+          const endThumbnailIndex = Math.ceil(result.end_frame / 10);
 
-          // Construct the new image URL
-          const imageUrl = `http://ipfs.davis.pub/ipfs/${url_param_cid}/${result.season}/${result.episode}/t${thumbnail_index}.jpg`;
+          for (
+            let index = startThumbnailIndex;
+            index <= endThumbnailIndex;
+            index++
+          ) {
+            // Construct the new image URL for each thumbnail in the range
+            const imageUrl = `http://ipfs.davis.pub/ipfs/${url_param_cid}/${result.season}/${result.episode}/t${index}.jpg`;
 
-          // Create the result item
-          const resultItem = document.createElement("div");
-          resultItem.className = "result-item";
-          resultItem.innerHTML = `
-            <div class="image-container">
+            // Create a new result item for each thumbnail index
+            const resultItem = document.createElement("div");
+            resultItem.className = "result-item";
+            resultItem.innerHTML = `
+              <div class="image-container">
                 <a href="${imageUrl}" target="_blank"><img src="${imageUrl}" alt="Frame Image"></a>
-            </div>
-            <p class="subtitle">${result.subtitle_text}</p>
-            <p>Score: ${result.score}</p> <!-- Display score for each result -->
-        `;
-          document.getElementById("results").appendChild(resultItem);
+              </div>
+              <p class="subtitle">${result.subtitle_text}</p>
+              <p>Score: ${result.score}</p> <!-- Display score for each result -->
+            `;
+            document.getElementById("results").appendChild(resultItem);
+          }
         });
       }
 
