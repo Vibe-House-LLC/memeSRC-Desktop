@@ -114,7 +114,7 @@ def find_matching_subtitle(episode_file, subtitles, season_num, episode_num):
             return subtitle_file
     return None
 
-def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_size=100):
+def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_size_seconds=10):
     season_num, episode_num = extract_season_episode(episode_file)
     season_dir = os.path.join(frames_base_dir, str(season_num))
     os.makedirs(season_dir, exist_ok=True)
@@ -122,10 +122,14 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_
     episode_dir = os.path.join(season_dir, str(episode_num))
     os.makedirs(episode_dir, exist_ok=True)
 
-    extract_all_frames(episode_file, episode_dir)
+    extract_all_frames(episode_file, episode_dir, fps)
 
-    create_zip_files_for_frames(episode_dir, fps, batch_size)
-    zip_thumbnails(episode_dir, batch_size=10)
+    # Calculate batch sizes based on batch_size_seconds
+    frame_batch_size = batch_size_seconds * fps  # For all frames
+    thumbnail_batch_size = batch_size_seconds  # For thumbnails, assuming 1 frame per second
+
+    create_zip_files_for_frames(episode_dir, fps, frame_batch_size)
+    zip_thumbnails(episode_dir, thumbnail_batch_size)
 
     matching_subtitle = find_matching_subtitle(episode_file, content_files["subtitles"], season_num, episode_num)
 
