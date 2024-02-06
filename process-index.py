@@ -66,6 +66,21 @@ def list_content_files():
                 content_files["subtitles"].append(os.path.join(dirpath, file))
     return content_files
 
+def zip_thumbnails(frames_dir, batch_size=10):
+    # Identify all thumbnails by their naming convention
+    thumbnail_files = sorted(f for f in os.listdir(frames_dir) if f.startswith('t') and f.endswith('.jpg'))
+    
+    # Zip thumbnails in batches
+    for i in range(0, len(thumbnail_files), batch_size):
+        batch_files = thumbnail_files[i:i+batch_size]
+        batch_index = i // batch_size
+        zip_file_path = os.path.join(frames_dir, f"thumbnails_{batch_index}.zip")
+        with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+            for file in batch_files:
+                file_path = os.path.join(frames_dir, file)
+                zipf.write(file_path, file)
+                os.remove(file_path)  # Remove the original jpg file after zipping
+
 def create_zip_files_for_frames(frames_dir, fps=10, batch_size=100):
     frame_files = sorted(f for f in os.listdir(frames_dir) if f.endswith('.jpg'))
     thumbnails = set(frame_files[::fps])
@@ -110,6 +125,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, batch_
     extract_all_frames(episode_file, episode_dir)
 
     create_zip_files_for_frames(episode_dir, fps, batch_size)
+    zip_thumbnails(episode_dir, batch_size=10)
 
     matching_subtitle = find_matching_subtitle(episode_file, content_files["subtitles"], season_num, episode_num)
 
