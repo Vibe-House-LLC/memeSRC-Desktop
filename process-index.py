@@ -67,8 +67,11 @@ def list_content_files():
     return content_files
 
 def zip_thumbnails(frames_dir, batch_size=10):
-    # Identify all thumbnails by their naming convention
-    thumbnail_files = sorted(f for f in os.listdir(frames_dir) if f.startswith('t') and f.endswith('.jpg'))
+    # Identify all thumbnails by their naming convention and sort them numerically
+    thumbnail_files = sorted(
+        (f for f in os.listdir(frames_dir) if f.startswith('t') and f.endswith('.jpg')),
+        key=lambda x: int(x.split('.')[0][1:])  # Extracts the numeric part and converts to int for sorting
+    )
     
     # Zip thumbnails in batches
     for i in range(0, len(thumbnail_files), batch_size):
