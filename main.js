@@ -29,7 +29,7 @@ function createMainWindow() {
     }
 
     // mainWindow.loadFile(path.join(__dirname, './index.html'));
-    mainWindow.loadURL('https://beta.memesrc.com/')
+    mainWindow.loadFile('video-image-test.html')
 
     mainWindowState.manage(mainWindow);
 
