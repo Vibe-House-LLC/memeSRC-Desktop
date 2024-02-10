@@ -7,13 +7,14 @@ import csv
 import base64
 from pathlib import Path
 import srt
+import json
 
 # Load configuration
 with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
     cfg = yaml.safe_load(ymlfile)
 
-def get_frames_dir(name):
-    return os.path.join(os.path.expanduser(f"~/.memesrc/processing/{name}"))
+def get_frames_dir(id):
+    return os.path.join(os.path.expanduser(f"~/.memesrc/processing/{id}"))
 
 # Define the paths from the config file
 FFMPEG_PATH = cfg['ffmpeg_path']
@@ -50,11 +51,22 @@ def list_content_files():
     return content_files
 
 def extract_video_clips(episode_file, clips_dir, fps=10, clip_duration=10):
-    filename_prefix = f"%d"
-    output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")    
-    command = [FFMPEG_PATH, "-i", episode_file, "-vf", f"fps={fps}", "-c:v", "libx264", "-an", "-crf", "23", "-preset", "ultrafast",
-               "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})", "-map", "0", "-segment_time", str(clip_duration),
-               "-f", "segment", "-reset_timestamps", "1", output_pattern]
+    
+    filename_prefix = "%d"
+    output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")
+    
+    command = [
+        FFMPEG_PATH, "-i", episode_file,
+        "-vf", f"fps={fps}",
+        "-c:v", "libx264", "-an", "-crf", "30", "-preset", "ultrafast",
+        "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})",
+        "-map", "0:v",  # This ensures only video streams are processed
+        "-segment_time", str(clip_duration),
+        "-f", "segment",
+        "-reset_timestamps", "1",
+        output_pattern
+    ]
+    
     subprocess.run(command)
 
 def ensure_dir_exists(directory):
@@ -139,10 +151,15 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "end_frame": end_index
                 })
 
-def process_content(input_path_param, index_name, fps=10, clip_duration=10):
+def process_content(input_path_param, id, index_name, fps=10, clip_duration=10):
     set_input_path(input_path_param)
-    frames_base_dir = get_frames_dir(index_name)
+    frames_base_dir = get_frames_dir(id)
     ensure_dir_exists(frames_base_dir)
+
+    # Write the 00_metadata.json file with the index name
+    metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
+    with open(metadata_path, 'w') as metadata_file:
+        json.dump({"index_name": index_name}, metadata_file)
 
     content_files = list_content_files()
     for episode_file in content_files["videos"]:
@@ -164,5 +181,6 @@ if __name__ == "__main__":
     parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
     args = parser.parse_args()
 
+    id_cli = input("Enter the ID for the output folder: ")
     index_name_cli = input("Enter the name for the index: ")
-    process_content(args.input_path, index_name_cli, args.fps, args.clip_duration)
+    process_content(args.input_path, id_cli, index_name_cli, args.fps, args.clip_duration)
