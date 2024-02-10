@@ -139,7 +139,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "end_frame": end_index
                 })
 
-def process_content(input_path_param, index_name, fps=10, clip_duration=30):
+def process_content(input_path_param, index_name, fps=10, clip_duration=10):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(index_name)
     ensure_dir_exists(frames_base_dir)
