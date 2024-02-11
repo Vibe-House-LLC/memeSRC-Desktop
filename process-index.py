@@ -8,6 +8,7 @@ import base64
 from pathlib import Path
 import srt
 import json
+from datetime import timedelta
 
 # Load configuration
 with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
@@ -57,8 +58,8 @@ def extract_video_clips(episode_file, clips_dir, fps=10, clip_duration=10):
     
     command = [
         FFMPEG_PATH, "-i", episode_file,
-        "-vf", f"fps={fps}",
-        "-c:v", "libx264", "-an", "-crf", "30", "-preset", "ultrafast",
+        "-vf", f"fps={fps},scale='min(iw,1280)':min'(ih,720)':force_original_aspect_ratio=decrease",
+        "-c:v", "libx264", "-an", "-crf", "31", "-preset", "ultrafast",
         "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})",
         "-map", "0:v",  # This ensures only video streams are processed
         "-segment_time", str(clip_duration),
@@ -68,6 +69,37 @@ def extract_video_clips(episode_file, clips_dir, fps=10, clip_duration=10):
     ]
     
     subprocess.run(command)
+
+def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
+    for index, subtitle in enumerate(subtitles):
+        # Convert subtitle start and end times to seconds
+        start_time_seconds = subtitle.start.total_seconds()
+        end_time_seconds = subtitle.end.total_seconds()
+
+        # Add a buffer of 0.1 seconds before the start and after the end
+        buffer = 0.1  # 100 milliseconds
+        start_time_with_buffer = max(0, start_time_seconds - buffer)  # Ensure start time is not negative
+        end_time_with_buffer = end_time_seconds + buffer
+
+        # Calculate the new duration of the subtitle clip with added buffer
+        clip_duration_with_buffer = end_time_with_buffer - start_time_with_buffer
+
+        # Format the start time for FFMPEG
+        start_time_ffmpeg = str(subtitle.start - timedelta(seconds=buffer)).replace(',', '.')
+
+        output_file = os.path.join(episode_dir, f"s{index + 1}.mp4")  # Naming starts from s1.mp4
+
+        command = [
+            FFMPEG_PATH, "-ss", str(start_time_with_buffer), "-i", episode_file,
+            "-t", str(clip_duration_with_buffer),  # Use the duration of the clip with buffer
+            "-vf", f"fps={fps},scale='min(iw*min(1000/iw,500/ih),1000)':'min(ih*min(1000/iw,500/ih),500)':force_original_aspect_ratio=decrease",
+            "-c:v", "libx264", "-crf", "35", "-preset", "ultrafast",  # Re-encode video to ensure compatibility
+            "-c:a", "aac", "-strict", "-2",  # Re-encode audio to AAC for broad compatibility
+            output_file
+        ]
+        
+        subprocess.run(command)
+
 
 def ensure_dir_exists(directory):
     if not os.path.exists(directory):
@@ -133,6 +165,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
     matching_subtitle = find_matching_subtitle(episode_file, content_files["subtitles"], season_num, episode_num)
     if matching_subtitle:
         subtitles = parse_srt(matching_subtitle)
+        extract_subtitle_clips(episode_file, subtitles, episode_dir, fps)  # Extract clips per subtitle
         csv_path = os.path.join(episode_dir, "_docs.csv")
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
             fieldnames = ['season', 'episode', 'subtitle_index', 'subtitle_text', 'start_frame', 'end_frame']
