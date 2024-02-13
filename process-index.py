@@ -100,7 +100,6 @@ def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
         
         subprocess.run(command)
 
-
 def ensure_dir_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
@@ -184,15 +183,26 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "end_frame": end_index
                 })
 
-def process_content(input_path_param, id, index_name, fps=10, clip_duration=10):
+def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=10):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(id)
     ensure_dir_exists(frames_base_dir)
 
-    # Write the 00_metadata.json file with the index name
+    metadata_content = {
+        "id": id,
+        "title": title,
+        "description": description if description else None,
+        "frameCount": 0,  # This should be updated with the actual frame count after processing
+        "colorMain": color_main,
+        "colorSecondary": color_secondary,
+        "emoji": emoji if emoji else None,
+        "status": status,
+        "index_name": index_name  # Keep index_name for backward compatibility or additional indexing purposes
+    }
+    
     metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
     with open(metadata_path, 'w') as metadata_file:
-        json.dump({"index_name": index_name}, metadata_file)
+        json.dump(metadata_content, metadata_file)
 
     content_files = list_content_files()
     for episode_file in content_files["videos"]:
@@ -214,6 +224,16 @@ if __name__ == "__main__":
     parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
     args = parser.parse_args()
 
+    # Collecting additional details for metadata
     id_cli = input("Enter the ID for the output folder: ")
     index_name_cli = input("Enter the name for the index: ")
-    process_content(args.input_path, id_cli, index_name_cli, args.fps, args.clip_duration)
+    title_cli = input("Enter the title of the content: ")
+    description_cli = input("Enter the description of the content (optional, press Enter to skip): ")
+    color_main_cli = input("Enter the main color of the content (in HEX format, e.g., #FFFFFF): ")
+    color_secondary_cli = input("Enter the secondary color of the content (in HEX format, e.g., #FFFFFF): ")
+    emoji_cli = input("Enter an emoji representing the content (optional, press Enter to skip): ")
+    status_cli = input("Enter the status of the content (as an integer): ")
+
+    # Ensure the call to process_content matches the updated function signature
+    process_content(args.input_path, id_cli, index_name_cli, title_cli, description_cli, color_main_cli, 
+                    color_secondary_cli, emoji_cli, status_cli, fps=args.fps, clip_duration=args.clip_duration)
