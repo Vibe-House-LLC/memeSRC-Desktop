@@ -76,45 +76,6 @@ function stopIpfsDaemon() {
   }
 }
 
-let lastIpfsStatus = null;
-
-function checkDaemonStatus() {
-  return new Promise((resolve, reject) => {
-    ipfs(`swarm peers`, (error, stdout, stderr) => {
-      const statusElement = document.getElementById("daemonStatus");
-      const toggleButton = document.getElementById("toggleDaemon");
-      let currentStatus;
-
-      if (error || stderr) {
-        statusElement.innerHTML = "Disconnected";
-        statusElement.className = "status-indicator not-running";
-        toggleButton.textContent = "Connect";
-        currentStatus = false;
-      } else {
-        statusElement.innerHTML = "Connected";
-        statusElement.className = "status-indicator running";
-        toggleButton.textContent = "Disconnect";
-        currentStatus = true;
-      }
-
-      // If the status has changed, update the list and the last known status
-      if (lastIpfsStatus !== currentStatus) {
-        lastIpfsStatus = currentStatus;
-        listIPFSDirectory();
-      }
-
-      fetchBandwidthStats()
-        .then((stats) => {
-          updateBandwidthStatsUI(stats);
-        })
-        .catch((error) => {
-          console.error("Failed to fetch bandwidth stats:", error);
-        });
-
-      resolve(currentStatus);
-    });
-  });
-}
 
 function fetchMetadata(itemCid) {
   return new Promise((resolve, reject) => {
