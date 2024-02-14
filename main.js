@@ -31,7 +31,7 @@ function checkDaemonStatus() {
 function toggleIpfsDaemon() {
     if (!ipfsDaemonProcess) {
         console.log('Starting IPFS daemon...');
-        ipfsDaemonProcess = spawn('ipfs', ['daemon']);
+        ipfsDaemonProcess = spawn(ipfsExecutable, ['daemon']);
 
         ipfsDaemonProcess.stdout.on('data', (data) => {
             console.log(`stdout: ${data}`);
