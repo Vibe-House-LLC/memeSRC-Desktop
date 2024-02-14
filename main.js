@@ -1,6 +1,6 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain } = require('electron');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 
 const isDev = process.env.NODE_ENV === 'dev';
@@ -13,6 +13,8 @@ const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs
 function ipfs(commandString, callback) {
   exec(`${ipfsExecutable} ${commandString}`, callback);
 }
+
+let ipfsDaemonProcess = null;
 
 function checkDaemonStatus() {
     console.log("TRYING TO CHECK THE IPFS STATUS");
