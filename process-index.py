@@ -57,7 +57,7 @@ def extract_video_clips(episode_file, clips_dir, fps=10, clip_duration=10):
     output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")
     
     command = [
-        FFMPEG_PATH, "-i", episode_file,
+        FFMPEG_PATH, "-y", "-i", episode_file,
         "-vf", f"fps={fps},scale='min(iw,1280)':min'(ih,720)':force_original_aspect_ratio=decrease",
         "-c:v", "libx264", "-an", "-crf", "31", "-preset", "ultrafast",
         "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})",
@@ -90,7 +90,7 @@ def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
         output_file = os.path.join(episode_dir, f"s{index + 1}.mp4")  # Naming starts from s1.mp4
 
         command = [
-            FFMPEG_PATH, "-ss", str(start_time_with_buffer), "-i", episode_file,
+            FFMPEG_PATH, "-y", "-ss", str(start_time_with_buffer), "-i", episode_file,
             "-t", str(clip_duration_with_buffer),  # Use the duration of the clip with buffer
             "-vf", f"fps={fps},scale='min(iw*min(500/iw,500/ih),500)':'min(ih*min(500/iw,500/ih),500)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
             "-c:v", "libx264", "-crf", "35", "-preset", "ultrafast",  # Re-encode video to ensure compatibility
@@ -150,8 +150,44 @@ def get_frame_index(time_delta, fps):
     starting_index = int(time_delta.total_seconds() * fps) - 1  # Adjust for zero-indexing
     return starting_index
 
+def update_processing_status(frames_base_dir, season_num, episode_num, status):
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    if os.path.exists(status_file_path):
+        with open(status_file_path, 'r') as file:
+            status_data = json.load(file)
+    else:
+        status_data = {}
+    
+    season_key = f"Season {season_num}"
+    if season_key not in status_data:
+        status_data[season_key] = {}
+    status_data[season_key][f"Episode {episode_num}"] = status
+    
+    with open(status_file_path, 'w') as file:
+        json.dump(status_data, file, indent=4)
+
+def is_episode_processed(frames_base_dir, season_num, episode_num):
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    if not os.path.exists(status_file_path):
+        return False
+    
+    with open(status_file_path, 'r') as file:
+        status_data = json.load(file)
+    
+    season_key = f"Season {season_num}"
+    if season_key in status_data:
+        if f"Episode {episode_num}" in status_data[season_key]:
+            return status_data[season_key][f"Episode {episode_num}"] == "completed"
+    return False
+
 def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_duration=10):
     season_num, episode_num = extract_season_episode(episode_file)
+    
+    # Check if the episode is already processed
+    if is_episode_processed(frames_base_dir, season_num, episode_num):
+        print(f"Skipping Season {season_num}, Episode {episode_num} (already processed).")
+        return
+
     season_dir = os.path.join(frames_base_dir, str(season_num))
     ensure_dir_exists(season_dir)
 
@@ -182,6 +218,8 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "start_frame": start_index,
                     "end_frame": end_index
                 })
+    # Mark the episode as completed after successful processing
+    update_processing_status(frames_base_dir, season_num, episode_num, "completed")
 
 def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=10):
     set_input_path(input_path_param)
@@ -217,15 +255,20 @@ def process_content(input_path_param, id, index_name, title, description, color_
     top_level_data = aggregate_csv_data(frames_base_dir)
     write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
-    parser.add_argument('input_path', help='Input path of the videos and subtitles')
-    parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
-    parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
-    args = parser.parse_args()
+def check_and_update_metadata(frames_base_dir, id_cli):
+    metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
+    if os.path.exists(metadata_path):
+        edit_metadata = input("Metadata file already exists. Do you want to edit it? [y/N]: ").lower()
+        if edit_metadata == 'y':
+            return collect_metadata(id_cli)
+        else:
+            with open(metadata_path, 'r') as metadata_file:
+                return json.load(metadata_file)
+    else:
+        return collect_metadata(id_cli)
 
-    # Collecting additional details for metadata
-    id_cli = input("Enter the ID for the output folder: ")
+def collect_metadata(id_cli):
+    # Collecting additional details for metadata, now in a separate function
     index_name_cli = input("Enter the name for the index: ")
     title_cli = input("Enter the title of the content: ")
     description_cli = input("Enter the description of the content (optional, press Enter to skip): ")
@@ -234,6 +277,48 @@ if __name__ == "__main__":
     emoji_cli = input("Enter an emoji representing the content (optional, press Enter to skip): ")
     status_cli = input("Enter the status of the content (as an integer): ")
 
-    # Ensure the call to process_content matches the updated function signature
-    process_content(args.input_path, id_cli, index_name_cli, title_cli, description_cli, color_main_cli, 
-                    color_secondary_cli, emoji_cli, status_cli, fps=args.fps, clip_duration=args.clip_duration)
+    return {
+        "id": id_cli,
+        "title": title_cli,
+        "description": description_cli if description_cli else None,
+        "colorMain": color_main_cli,
+        "colorSecondary": color_secondary_cli,
+        "emoji": emoji_cli if emoji_cli else None,
+        "status": status_cli,
+    }
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
+    parser.add_argument('input_path', help='Input path of the videos and subtitles')
+    parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
+    parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
+    args = parser.parse_args()
+
+    id_cli = input("Enter the ID for the output folder: ")
+    frames_base_dir = get_frames_dir(id_cli)
+    ensure_dir_exists(frames_base_dir)
+
+    # Check for existing metadata and update if necessary
+    metadata_content = check_and_update_metadata(frames_base_dir, id_cli)
+
+    # Provide default values for missing keys
+    default_metadata = {
+        'id': id_cli,  # Use the folder ID as a fallback
+        'index_name': 'default_index',
+        'title': 'Untitled',
+        'description': '',
+        'color_main': '#FFFFFF',  # Default white
+        'color_secondary': '#000000',  # Default black
+        'emoji': '',
+        'status': '0',
+    }
+
+    # Update the default_metadata with the actual values from metadata_content
+    default_metadata.update(metadata_content)
+
+    # Prepare the arguments for process_content
+    expected_keys = ['id', 'index_name', 'title', 'description', 'color_main', 'color_secondary', 'emoji', 'status']
+    filtered_metadata_content = {k: default_metadata[k] for k in expected_keys}
+
+    # Call process_content with the filtered metadata content
+    process_content(args.input_path, **filtered_metadata_content, fps=args.fps, clip_duration=args.clip_duration)
