@@ -51,19 +51,18 @@ def list_content_files():
                 content_files["subtitles"].append(os.path.join(dirpath, file))
     return content_files
 
-def extract_video_clips(episode_file, clips_dir, fps=10, clip_duration=10):
-    
+def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
     filename_prefix = "%d"
     output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")
     
     command = [
         FFMPEG_PATH, "-y", "-i", episode_file,
         "-vf", f"fps={fps},scale='min(iw,1280)':min'(ih,720)':force_original_aspect_ratio=decrease",
-        "-c:v", "libx264", "-an", "-crf", "31", "-preset", "ultrafast",
+        "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.0", "-pix_fmt", "yuv420p",
+        "-crf", "31",
         "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})",
-        "-map", "0:v",  # This ensures only video streams are processed
-        "-segment_time", str(clip_duration),
-        "-f", "segment",
+        "-map", "0:0", 
+        "-segment_time", str(clip_duration), "-f", "segment",
         "-reset_timestamps", "1",
         output_pattern
     ]
