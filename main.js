@@ -52,6 +52,32 @@ function toggleIpfsDaemon() {
     }
 }
 
+function fetchBandwidthStats() {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} stats bw`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error("Error fetching bandwidth stats:", error || stderr);
+                reject(stderr || error);
+            } else {
+                const stats = parseBandwidthStats(stdout);
+                resolve(stats);
+            }
+        });
+    });
+}
+
+function parseBandwidthStats(output) {
+    const stats = {};
+    const lines = output.split("\n");
+    lines.forEach((line) => {
+        if (line.includes(":")) {
+            const [key, value] = line.split(":").map((item) => item.trim());
+            stats[key] = value;
+        }
+    });
+    return stats;
+}
+
 // IPC handler definitions
 
 ipcMain.handle('check-daemon-status', async (event) => {
@@ -73,6 +99,16 @@ ipcMain.handle('toggle-ipfs-daemon', async (event) => {
         return { success: false, message: `Error toggling IPFS daemon: ${error}` };
     }
 });
+
+ipcMain.handle('fetch-bandwidth-stats', async (event) => {
+    try {
+        const stats = await fetchBandwidthStats();
+        return { success: true, stats: stats };
+    } catch (error) {
+        console.error('Failed to fetch bandwidth stats:', error);
+        return { success: false, message: `Error fetching bandwidth stats: ${error}` };
+    }
+})
 
 ipcMain.handle('fetch-metadata', (event, itemCid) => {
     return new Promise((resolve, reject) => {
