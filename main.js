@@ -74,6 +74,65 @@ ipcMain.handle('toggle-ipfs-daemon', async (event) => {
     }
 });
 
+ipcMain.handle('fetch-metadata', (event, itemCid) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} cat ${itemCid}/00_metadata.json`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.warn(`Error fetching metadata for CID ${itemCid}:`, error || stderr);
+                resolve(null); // Resolve with null if there's an error
+            } else {
+                try {
+                    const metadata = JSON.parse(stdout);
+                    resolve(metadata);
+                } catch (parseError) {
+                    console.error(`Error parsing metadata for CID ${itemCid}:`, parseError);
+                    resolve(null);
+                }
+            }
+        });
+    });
+});
+
+ipcMain.handle('pin-item', (event, cid) => {
+    exec(`${ipfsExecutable} pin add ${cid}`, (error, stdout, stderr) => {
+        if (error || stderr) {
+            console.error(`Error pinning CID ${cid}:`, error || stderr);
+            return { success: false, message: stderr || error.message };
+        } else {
+            console.log(`Pinned CID ${cid}`);
+            return { success: true, message: stdout };
+        }
+    });
+});
+
+// Unpin Item IPC Handler
+ipcMain.handle('unpin-item', (event, cid) => {
+    exec(`${ipfsExecutable} pin rm ${cid}`, (error, stdout, stderr) => {
+        if (error || stderr) {
+            console.error(`Error unpinning CID ${cid}:`, error || stderr);
+            return { success: false, message: stderr || error.message };
+        } else {
+            console.log(`Unpinned CID ${cid}`);
+            return { success: true, message: stdout };
+        }
+    });
+});
+
+// List Directory Contents IPC Handler
+ipcMain.handle('list-directory-contents', (event, directory) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error listing directory contents:`, error || stderr);
+                reject(stderr || error);
+            } else {
+                const items = stdout.split('\n').filter(line => line.trim() !== '');
+                resolve(items);
+            }
+        });
+    });
+});
+
 ipcMain.on('load-index-html', () => {
     mainWindow.loadFile(path.join(__dirname, './index.html'));
 });
