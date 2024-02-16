@@ -61,9 +61,9 @@ def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
         "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.0", "-pix_fmt", "yuv420p",
         "-crf", "31",
         "-force_key_frames", f"expr:gte(t,n_forced*{clip_duration})",
-        "-map", "0:0", 
         "-segment_time", str(clip_duration), "-f", "segment",
         "-reset_timestamps", "1",
+        "-an",
         output_pattern
     ]
     
@@ -92,8 +92,9 @@ def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
             FFMPEG_PATH, "-y", "-ss", str(start_time_with_buffer), "-i", episode_file,
             "-t", str(clip_duration_with_buffer),  # Use the duration of the clip with buffer
             "-vf", f"fps={fps},scale='min(iw*min(500/iw,500/ih),500)':'min(ih*min(500/iw,500/ih),500)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2",
-            "-c:v", "libx264", "-crf", "35", "-preset", "ultrafast",  # Re-encode video to ensure compatibility
-            "-c:a", "aac", "-strict", "-2",  # Re-encode audio to AAC for broad compatibility
+            "-c:v", "libx264", "-profile:v", "baseline", "-level", "3.0", "-pix_fmt", "yuv420p",
+            "-crf", "35",
+            "-an",
             output_file
         ]
         
