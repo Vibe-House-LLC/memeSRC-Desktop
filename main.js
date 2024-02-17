@@ -215,6 +215,19 @@ ipcMain.handle('list-directory-contents', (event, directory) => {
     });
 });
 
+ipcMain.handle('add-cid-to-index', async (event, cid) => {
+    try {
+        const destinationPath = `/memesrc/index/${cid}`;
+        await execAsync(`${ipfsExecutable} files cp /ipfs/${cid} ${destinationPath}`);
+        console.log(`Copied CID ${cid} to ${destinationPath}`);
+        // You might want to refresh or update some UI element or data structure here
+        return { success: true, message: `Copied CID ${cid} to ${destinationPath}` };
+    } catch (error) {
+        console.error(`Error copying CID to /memesrc/index/:`, error);
+        return { success: false, message: `Error copying CID to /memesrc/index/: ${error.message}` };
+    }
+});
+
 function fetchItemDetails(directory, name) {
     return new Promise((resolve, reject) => {
         exec(`${ipfsExecutable} files stat ${path.join(directory, name)}`, (error, stdout, stderr) => {
