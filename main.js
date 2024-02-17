@@ -129,6 +129,21 @@ ipcMain.handle('fetch-metadata', (event, itemCid) => {
     });
 });
 
+ipcMain.handle('check-pin-status', (event, cid) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} pin ls --type=recursive ${cid}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error checking pin status for CID ${cid}:`, error || stderr);
+                resolve({ success: false, isPinned: false, message: stderr || error.message });
+            } else {
+                // If the CID is found in the output, it's considered pinned
+                const isPinned = stdout.includes(cid);
+                resolve({ success: true, isPinned: isPinned, message: `CID ${cid} is ${isPinned ? 'pinned' : 'not pinned'}.` });
+            }
+        });
+    });
+});
+
 ipcMain.handle('pin-item', (event, cid) => {
     exec(`${ipfsExecutable} pin add ${cid}`, (error, stdout, stderr) => {
         if (error || stderr) {
@@ -154,20 +169,45 @@ ipcMain.handle('unpin-item', (event, cid) => {
     });
 });
 
-// List Directory Contents IPC Handler
 ipcMain.handle('list-directory-contents', (event, directory) => {
     return new Promise((resolve, reject) => {
-        exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
+        exec(`${ipfsExecutable} files ls ${directory}`, async (error, stdout, stderr) => {
             if (error || stderr) {
                 console.error(`Error listing directory contents:`, error || stderr);
                 reject(stderr || error);
             } else {
-                const items = stdout.split('\n').filter(line => line.trim() !== '');
-                resolve(items);
+                const itemNames = stdout.split('\n').filter(line => line.trim() !== '');
+                const itemsDetailsPromises = itemNames.map(name => fetchItemDetails(directory, name));
+                Promise.all(itemsDetailsPromises)
+                    .then(itemsDetails => {
+                        resolve(itemsDetails);
+                    })
+                    .catch(err => {
+                        console.error("Error fetching item details:", err);
+                        reject(err);
+                    });
             }
         });
     });
 });
+
+function fetchItemDetails(directory, name) {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files stat ${path.join(directory, name)}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error fetching details for ${name}:`, error || stderr);
+                reject(stderr || error);
+            } else {
+                const details = stdout.split('\n').reduce((acc, line) => {
+                    if (line.includes('Size:')) acc.size = line.split(':')[1].trim();
+                    if (line.includes('CumulativeSize:')) acc.cumulative_size = line.split(':')[1].trim();
+                    return acc;
+                }, { name, cid: stdout.split('\n')[0].trim() });
+                resolve(details);
+            }
+        });
+    });
+}
 
 ipcMain.on('load-index-html', () => {
     mainWindow.loadFile(path.join(__dirname, './index.html'));
