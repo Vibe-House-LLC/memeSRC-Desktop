@@ -74,11 +74,24 @@ function parseBandwidthStats(output) {
     const lines = output.split("\n");
     lines.forEach((line) => {
         if (line.includes(":")) {
-            const [key, value] = line.split(":").map((item) => item.trim());
+            let [key, value] = line.split(":").map((item) => item.trim());
+            // Convert value to bytes
+            value = convertToBytes(value);
             stats[key] = value;
         }
     });
     return stats;
+}
+
+// Helper function to convert values with units to bytes
+function convertToBytes(valueWithUnit) {
+    const units = { kB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
+    const match = valueWithUnit.match(/([\d.]+)\s*(kB|MB|GB|B)?/);
+    if (!match) return null;
+    const value = parseFloat(match[1]);
+    const unit = match[2];
+    const multiplier = units[unit] || 1;
+    return value * multiplier;
 }
 
 // IPC handler definitions
@@ -106,12 +119,13 @@ ipcMain.handle('toggle-ipfs-daemon', async (event) => {
 ipcMain.handle('fetch-bandwidth-stats', async (event) => {
     try {
         const stats = await fetchBandwidthStats();
+        // Assuming you want to include a simplified response with only byte values
         return { success: true, stats: stats };
     } catch (error) {
         console.error('Failed to fetch bandwidth stats:', error);
         return { success: false, message: `Error fetching bandwidth stats: ${error}` };
     }
-})
+});
 
 ipcMain.handle('fetch-metadata', (event, itemCid) => {
     return new Promise((resolve, reject) => {
