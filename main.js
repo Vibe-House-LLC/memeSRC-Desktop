@@ -2,6 +2,9 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
+const { promisify } = require('util');
+
+const execAsync = promisify(exec);
 
 const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
@@ -144,29 +147,36 @@ ipcMain.handle('check-pin-status', (event, cid) => {
     });
 });
 
-ipcMain.handle('pin-item', (event, cid) => {
-    exec(`${ipfsExecutable} pin add ${cid}`, (error, stdout, stderr) => {
-        if (error || stderr) {
-            console.error(`Error pinning CID ${cid}:`, error || stderr);
-            return { success: false, message: stderr || error.message };
+ipcMain.handle('pin-item', async (event, cid) => {
+    try {
+        const { stdout, stderr } = await execAsync(`${ipfsExecutable} pin add ${cid}`);
+        if (stderr) {
+            console.error(`Error pinning CID ${cid}:`, stderr);
+            return { success: false, message: stderr };
         } else {
-            console.log(`Pinned CID ${cid}`);
+            console.log(`Pinned CID ${cid}:`, stdout);
             return { success: true, message: stdout };
         }
-    });
+    } catch (error) {
+        console.error(`Error pinning CID ${cid}:`, error);
+        return { success: false, message: error.message };
+    }
 });
 
-// Unpin Item IPC Handler
-ipcMain.handle('unpin-item', (event, cid) => {
-    exec(`${ipfsExecutable} pin rm ${cid}`, (error, stdout, stderr) => {
-        if (error || stderr) {
-            console.error(`Error unpinning CID ${cid}:`, error || stderr);
-            return { success: false, message: stderr || error.message };
+ipcMain.handle('unpin-item', async (event, cid) => {
+    try {
+        const { stdout, stderr } = await execAsync(`${ipfsExecutable} pin rm ${cid}`);
+        if (stderr) {
+            console.error(`Error unpinning CID ${cid}:`, stderr);
+            return { success: false, message: stderr };
         } else {
-            console.log(`Unpinned CID ${cid}`);
+            console.log(`Unpinned CID ${cid}:`, stdout);
             return { success: true, message: stdout };
         }
-    });
+    } catch (error) {
+        console.error(`Error unpinning CID ${cid}:`, error);
+        return { success: false, message: error.message };
+    }
 });
 
 ipcMain.handle('list-directory-contents', (event, directory) => {
