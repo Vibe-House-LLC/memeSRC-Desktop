@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
+const { PythonShell } = require('python-shell');
 
 const execAsync = promisify(exec);
 
@@ -226,6 +227,32 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
         console.error(`Error copying CID to /memesrc/index/:`, error);
         return { success: false, message: `Error copying CID to /memesrc/index/: ${error.message}` };
     }
+});
+
+ipcMain.handle('run-python-script', async (event, { inputPath, ffmpegPath, id }) => {
+    // Prepare options for PythonShell
+    console.log("HEYOOO")
+    let options = {
+        mode: 'text',
+        args: [
+            inputPath,
+            ffmpegPath,
+            id
+        ]
+    };
+
+    // Use PythonShell to run your script
+    return new Promise((resolve, reject) => {
+        PythonShell.run('process-index.py', options, (err, results) => {
+            if (err) {
+                console.error('Failed to run Python script:', err);
+                reject(err);
+            } else {
+                console.log('Python script executed successfully:', results);
+                resolve(results);
+            }
+        });
+    });
 });
 
 function fetchItemDetails(directory, name) {

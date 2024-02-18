@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "electron-window-state": "^5.0.3",
-    "kubo": "^0.26.0"
+    "kubo": "^0.26.0",
+    "python-shell": "^5.0.0"
   }
 }

@@ -9,16 +9,35 @@ from pathlib import Path
 import srt
 import json
 from datetime import timedelta
+import logging  # Import the logging module
 
-# Load configuration
-with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
-    cfg = yaml.safe_load(ymlfile)
+# Load configuration from a YAML file or set default values
+config_path = os.path.expanduser('~/.memesrc/config.yml')
+if os.path.exists(config_path):
+    with open(config_path, 'r') as ymlfile:
+        cfg = yaml.safe_load(ymlfile)
+else:
+    cfg = {}
 
 def get_frames_dir(id):
     return os.path.join(os.path.expanduser(f"~/.memesrc/processing/{id}"))
 
-# Define the paths from the config file
-FFMPEG_PATH = cfg['ffmpeg_path']
+# Initialize logging
+def setup_logging(log_path):
+    logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    logging.info("Logging setup complete.")
+
+# Command line arguments setup
+parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
+parser.add_argument('input_path', help='Input path of the videos and subtitles')
+parser.add_argument('ffmpeg_path', help='Path to the FFmpeg executable')
+parser.add_argument('id', help='ID for the output folder')
+parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
+parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
+args = parser.parse_args()
+
+# Use the FFmpeg path from the command line argument or configuration file
+FFMPEG_PATH = args.ffmpeg_path if args.ffmpeg_path else cfg.get('ffmpeg_path', 'ffmpeg')
 
 def set_input_path(path):
     global input_path
@@ -185,6 +204,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
     
     # Check if the episode is already processed
     if is_episode_processed(frames_base_dir, season_num, episode_num):
+        logging.info(f"Skipping Season {season_num}, Episode {episode_num} (already processed).")
         print(f"Skipping Season {season_num}, Episode {episode_num} (already processed).")
         return
 
@@ -255,19 +275,19 @@ def process_content(input_path_param, id, index_name, title, description, color_
     top_level_data = aggregate_csv_data(frames_base_dir)
     write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
 
-def check_and_update_metadata(frames_base_dir, id_cli):
+def check_and_update_metadata(frames_base_dir, id):
     metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
     if os.path.exists(metadata_path):
         edit_metadata = input("Metadata file already exists. Do you want to edit it? [y/N]: ").lower()
         if edit_metadata == 'y':
-            return collect_metadata(id_cli)
+            return collect_metadata(id)
         else:
             with open(metadata_path, 'r') as metadata_file:
                 return json.load(metadata_file)
     else:
-        return collect_metadata(id_cli)
+        return collect_metadata(id)
 
-def collect_metadata(id_cli):
+def collect_metadata(id):
     # Collecting additional details for metadata, now in a separate function
     index_name_cli = input("Enter the name for the index: ")
     title_cli = input("Enter the title of the content: ")
@@ -278,7 +298,7 @@ def collect_metadata(id_cli):
     status_cli = input("Enter the status of the content (as an integer): ")
 
     return {
-        "id": id_cli,
+        "id": id,
         "title": title_cli,
         "description": description_cli if description_cli else None,
         "colorMain": color_main_cli,
@@ -288,37 +308,46 @@ def collect_metadata(id_cli):
     }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
-    parser.add_argument('input_path', help='Input path of the videos and subtitles')
-    parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
-    parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
-    args = parser.parse_args()
-
-    id_cli = input("Enter the ID for the output folder: ")
-    frames_base_dir = get_frames_dir(id_cli)
+    frames_base_dir = get_frames_dir(args.id)
     ensure_dir_exists(frames_base_dir)
 
-    # Check for existing metadata and update if necessary
-    metadata_content = check_and_update_metadata(frames_base_dir, id_cli)
+    # Set up logging
+    log_path = os.path.join(frames_base_dir, '00_log.txt')
+    setup_logging(log_path)
 
-    # Provide default values for missing keys
-    default_metadata = {
-        'id': id_cli,  # Use the folder ID as a fallback
-        'index_name': 'default_index',
-        'title': 'Untitled',
-        'description': '',
+    logging.info(f"Source: {args.input_path}")
+    logging.info(f"Destination: {get_frames_dir(args.id)}")
+
+    # Set metadata directly using the 'id' without collecting user input
+    metadata_content = {
+        'id': args.id,
+        'index_name': args.id,  # Use 'id' for 'index_name'
+        'title': args.id,  # Use 'id' for 'title'
+        'description': 'Auto-generated content',  # Default description
         'color_main': '#FFFFFF',  # Default white
         'color_secondary': '#000000',  # Default black
-        'emoji': '',
-        'status': '0',
+        'emoji': '🎥',  # Default emoji for video content
+        'status': '1',  # Default status to indicate active or processed
     }
 
-    # Update the default_metadata with the actual values from metadata_content
-    default_metadata.update(metadata_content)
+    # Write the metadata content to the '00_metadata.json' file
+    metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
+    with open(metadata_path, 'w') as metadata_file:
+        json.dump(metadata_content, metadata_file, indent=4)
 
-    # Prepare the arguments for process_content
-    expected_keys = ['id', 'index_name', 'title', 'description', 'color_main', 'color_secondary', 'emoji', 'status']
-    filtered_metadata_content = {k: default_metadata[k] for k in expected_keys}
+    set_input_path(args.input_path)
+    content_files = list_content_files()
+    for episode_file in content_files["videos"]:
+        logging.info(f"About to process: {episode_file}")
+        process_episode(episode_file, frames_base_dir, content_files, args.fps, args.clip_duration)
 
-    # Call process_content with the filtered metadata content
-    process_content(args.input_path, **filtered_metadata_content, fps=args.fps, clip_duration=args.clip_duration)
+    # Process CSV data for subtitles at the end, if subtitles were found and processed
+    for season_dir in os.listdir(frames_base_dir):
+        season_path = os.path.join(frames_base_dir, season_dir)
+        if os.path.isdir(season_path):
+            season_data = aggregate_csv_data(season_path)
+            write_aggregated_csv(season_data, os.path.join(season_path, '_docs.csv'))
+    top_level_data = aggregate_csv_data(frames_base_dir)
+    write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
+    # Log the completion of the process
+    logging.info("Processing completed successfully.")
