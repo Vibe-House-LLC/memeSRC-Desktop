@@ -11,6 +11,7 @@ import srt
 import json
 from datetime import timedelta
 import logging
+import zipfile
 
 # Load configuration from a YAML file or set default values
 config_path = os.path.expanduser('~/.memesrc/config.yml')
@@ -160,6 +161,34 @@ def ensure_dir_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
 
+def zip_video_clips(clips_dir):
+    # Dictionary to hold lists of files for each zip
+    zip_groups = {}
+    for filename in os.listdir(clips_dir):
+        if filename.endswith(".mp4") and filename.startswith("s"):
+            # Extract the number from the filename
+            try:
+                number = int(filename[1:-4])  # Remove 's' prefix and '.mp4' suffix
+            except ValueError:
+                continue  # Skip files that don't match the expected naming scheme
+            
+            # Determine the group for this file
+            group_number = number // 25
+            if group_number not in zip_groups:
+                zip_groups[group_number] = []
+            zip_groups[group_number].append(filename)
+    
+    # Create a zip file for each group
+    for group_number, filenames in zip_groups.items():
+        zip_filename = os.path.join(clips_dir, f"s{group_number}.zip")
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            for filename in filenames:
+                file_path = os.path.join(clips_dir, filename)
+                zipf.write(file_path, arcname=filename)
+                # After adding the file to zip, delete the original mp4 file
+                os.remove(file_path)  # This deletes the sX.mp4 file after it's zipped
+        print(f"Created zip file: {zip_filename}")
+
 # ==================
 # SUBTITLE HANDLING
 # ==================
@@ -275,6 +304,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "start_frame": start_index,
                     "end_frame": end_index
                 })
+    zip_video_clips(episode_dir)
     # Mark the episode as completed after successful processing
     update_processing_status(frames_base_dir, season_num, episode_num, "completed")
 
