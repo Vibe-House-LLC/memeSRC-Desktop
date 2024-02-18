@@ -1,3 +1,5 @@
+const os = require('os');
+const fs = require('fs').promises;
 const path = require('path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { exec, spawn } = require('child_process');
@@ -11,7 +13,7 @@ const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
 
 const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
-const pythonExecutable = path.join(__dirname, 'node_modules', 'python', 'bin', 'python');
+// const pythonExecutable = path.join(__dirname, 'node_modules', 'python', 'bin', 'python');
 
 // IPFS functions
 
@@ -144,6 +146,19 @@ ipcMain.handle('fetch-metadata', (event, itemCid) => {
             }
         });
     });
+});
+
+ipcMain.handle('fetch-processing-status', async (event, id) => {
+    const statusPath = path.join(os.homedir(), '.memesrc', 'processing', id, 'processing_status.json');
+    try {
+        // Correctly using fs.promises.readFile with 'utf8' encoding
+        const data = await fs.readFile(statusPath, 'utf8');
+        const status = JSON.parse(data);
+        return { success: true, status };
+    } catch (error) {
+        console.error(`Failed to fetch processing status for ID ${id}:`, error);
+        return { success: false, message: `Error fetching processing status for ID ${id}: ${error.message}` };
+    }
 });
 
 ipcMain.handle('check-pin-status', (event, cid) => {
