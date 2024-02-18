@@ -10,7 +10,7 @@ from pathlib import Path
 import srt
 import json
 from datetime import timedelta
-import logging  # Import the logging module
+import logging
 
 # Load configuration from a YAML file or set default values
 config_path = os.path.expanduser('~/.memesrc/config.yml')
@@ -23,12 +23,10 @@ else:
 def get_frames_dir(id):
     return os.path.join(os.path.expanduser(f"~/.memesrc/processing/{id}"))
 
-# Initialize logging
 def setup_logging(log_path):
     logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
     logging.info("Logging setup complete.")
 
-# Command line arguments setup
 parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
 parser.add_argument('input_path', help='Input path of the videos and subtitles')
 parser.add_argument('ffmpeg_path', help='Path to the FFmpeg executable')
@@ -37,7 +35,6 @@ parser.add_argument('--fps', type=int, default=10, help='Frames per second for t
 parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
 args = parser.parse_args()
 
-# Use the FFmpeg path from the command line argument or configuration file
 FFMPEG_PATH = args.ffmpeg_path if args.ffmpeg_path else cfg.get('ffmpeg_path', 'ffmpeg')
 
 def set_input_path(path):
@@ -70,6 +67,45 @@ def list_content_files():
             elif any(file.endswith(ext) for ext in valid_subtitle_extensions):
                 content_files["subtitles"].append(os.path.join(dirpath, file))
     return content_files
+
+def ensure_dir_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+# Initialize job status with all episodes
+def initialize_job_status(content_files, frames_base_dir):
+    all_episodes = {}
+    total_episodes = len(content_files["videos"])
+    
+    for video_file in content_files["videos"]:
+        season_num, episode_num = extract_season_episode(video_file)
+        season_key = f"Season {season_num}"
+        if season_key not in all_episodes:
+            all_episodes[season_key] = {}
+        all_episodes[season_key][f"Episode {episode_num}"] = "pending"
+    
+    job_status = {
+        "total_episodes": total_episodes,
+        "processed_episodes": 0,
+        "percent_complete": 0.0,
+        "episodes": all_episodes
+    }
+    
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    with open(status_file_path, 'w') as file:
+        json.dump(job_status, file, indent=4)
+    
+    return job_status
+
+def update_job_status(job_status, season_num, episode_num, frames_base_dir):
+    season_key = f"Season {season_num}"
+    job_status["episodes"][season_key][f"Episode {episode_num}"] = "completed"
+    job_status["processed_episodes"] += 1
+    job_status["percent_complete"] = (job_status["processed_episodes"] / job_status["total_episodes"]) * 100
+    
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    with open(status_file_path, 'w') as file:
+        json.dump(job_status, file, indent=4)
 
 def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
     filename_prefix = "%d"
@@ -338,9 +374,15 @@ if __name__ == "__main__":
 
     set_input_path(args.input_path)
     content_files = list_content_files()
+
+    # Initialize job status with all episodes marked as pending
+    job_status = initialize_job_status(content_files, frames_base_dir)
+
     for episode_file in content_files["videos"]:
         logging.info(f"About to process: {episode_file}")
         process_episode(episode_file, frames_base_dir, content_files, args.fps, args.clip_duration)
+        season_num, episode_num = extract_season_episode(episode_file)
+        update_job_status(job_status, season_num, episode_num, frames_base_dir)
 
     # Process CSV data for subtitles at the end, if subtitles were found and processed
     for season_dir in os.listdir(frames_base_dir):
@@ -350,5 +392,6 @@ if __name__ == "__main__":
             write_aggregated_csv(season_data, os.path.join(season_path, '_docs.csv'))
     top_level_data = aggregate_csv_data(frames_base_dir)
     write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
+
     # Log the completion of the process
     logging.info("Processing completed successfully.")
