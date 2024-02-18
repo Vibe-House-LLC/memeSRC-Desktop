@@ -4,6 +4,7 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
+const { default: ffmpegPath } = require('ffmpeg-static');
 
 const execAsync = promisify(exec);
 
@@ -11,8 +12,6 @@ const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
 
 const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
-// const ffmpegExecutable = path.join(__dirname, 'node_modules', 'ffmpeg', 'bin', 'ffmpeg');
-console.log("ffmpegExecutable", ffmpegExecutable)
 const pythonExecutable = path.join(__dirname, 'node_modules', 'python', 'bin', 'python');
 
 // IPFS functions
@@ -235,6 +234,7 @@ ipcMain.on('start-python-script', (event, args) => {
     const { inputPath, id } = args;
 
     ffmpegPath = require('ffmpeg-static');
+    console.log("ffmpeg path:", ffmpegPath)
 
     // Construct the command to run the Python script with arguments
     const command = `python "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
