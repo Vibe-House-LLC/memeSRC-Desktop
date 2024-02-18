@@ -4,7 +4,6 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
-const { default: ffmpegPath } = require('ffmpeg-static');
 
 const execAsync = promisify(exec);
 
@@ -233,7 +232,7 @@ ipcMain.on('start-python-script', (event, args) => {
     const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
     const { inputPath, id } = args;
 
-    ffmpegPath = require('ffmpeg-static');
+    const ffmpegPath = require('ffmpeg-static');
     console.log("ffmpeg path:", ffmpegPath)
 
     // Construct the command to run the Python script with arguments
