@@ -249,38 +249,32 @@ ipcMain.on('start-python-script', (event, args) => {
 });
 
 ipcMain.handle('add-processed-index-to-ipfs', async (event, input) => {
+    console.log("Adding processed index to ipfs:")
     console.log("input", input)
     return new Promise((resolve, reject) => {
         ipfs(`add -r ${input}`, (error, stdout, stderr) => {
-            if (error || stderr) {
-                console.error(`Error adding processed index to IPFS:`, error || stderr);
-                reject(stderr || error);
-            } else {
-                // Parse stdout to find the CID of the directory
-                const lines = stdout.split('\n');
-                const directoryLine = lines.find(line => line.endsWith(`${input}`));
-                if (directoryLine) {
-                    const cidMatch = directoryLine.match(/added (\w+) /);
-                    if (cidMatch && cidMatch[1]) {
-                        const cid = cidMatch[1];
-                        console.log(`Added processed index to IPFS with CID: ${cid}`);
+            console.log(stdout)
+            // Parse stdout to find the CID of the directory
+            const lines = stdout.split('\n');
+            // Extract the directory name from the input path
+            const directoryName = input.split('/').pop();
+            const directoryLine = lines.find(line => line.endsWith(`${directoryName}`));
+            console.log("directoryLine", directoryLine)
+            if (directoryLine) {
+                const cidMatch = directoryLine.match(/added (\w+) /);
+                if (cidMatch && cidMatch[1]) {
+                    const cid = cidMatch[1];
+                    console.log(`Added processed index to IPFS with CID: ${cid}`);
 
-                        // Next, copy the directory to /memesrc/index/{CID}
-                        ipfs(`files cp /ipfs/${cid} /memesrc/index/${cid}`, (cpError, cpStdout, cpStderr) => {
-                            if (cpError || cpStderr) {
-                                console.error(`Error copying CID ${cid} to /memesrc/index/:`, cpError || cpStderr);
-                                reject(cpStderr || cpError);
-                            } else {
-                                console.log(`Copied CID ${cid} to /memesrc/index/${cid}`);
-                                resolve(cid); // Resolve with the CID of the directory after copying
-                            }
-                        });
-                    } else {
-                        reject('CID of the directory could not be parsed from the output.');
-                    }
+                    // Next, copy the directory to /memesrc/index/{CID}
+                    ipfs(`files cp /ipfs/${cid} /memesrc/index/${cid}`, (cpError, cpStdout, cpStderr) => {
+                        resolve(cid); // Resolve with the CID of the directory after copying
+                    });
                 } else {
-                    reject(`No directory entry found in the output for ${input}.`);
+                    reject('CID of the directory could not be parsed from the output.');
                 }
+            } else {
+                reject(`No directory entry found in the output for ${input}.`);
             }
         });
     });
