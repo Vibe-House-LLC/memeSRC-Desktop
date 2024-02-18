@@ -33,7 +33,7 @@ parser.add_argument('input_path', help='Input path of the videos and subtitles')
 parser.add_argument('ffmpeg_path', help='Path to the FFmpeg executable')
 parser.add_argument('id', help='ID for the output folder')
 parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
-parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
+parser.add_argument('--clip_duration', type=int, default=25, help='Duration of each clip in seconds')
 args = parser.parse_args()
 
 FFMPEG_PATH = args.ffmpeg_path if args.ffmpeg_path else cfg.get('ffmpeg_path', 'ffmpeg')
@@ -108,7 +108,7 @@ def update_job_status(job_status, season_num, episode_num, frames_base_dir):
     with open(status_file_path, 'w') as file:
         json.dump(job_status, file, indent=4)
 
-def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
+def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=25):
     filename_prefix = "%d"
     output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")
     
@@ -173,7 +173,7 @@ def zip_video_clips(clips_dir):
                 continue  # Skip files that don't match the expected naming scheme
             
             # Determine the group for this file
-            group_number = number // 25
+            group_number = number // 15
             if group_number not in zip_groups:
                 zip_groups[group_number] = []
             zip_groups[group_number].append(filename)
@@ -265,7 +265,7 @@ def is_episode_processed(frames_base_dir, season_num, episode_num):
             return status_data[season_key][f"Episode {episode_num}"] == "completed"
     return False
 
-def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_duration=10):
+def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_duration=25):
     season_num, episode_num = extract_season_episode(episode_file)
     
     # Check if the episode is already processed
@@ -308,7 +308,7 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
     # Mark the episode as completed after successful processing
     update_processing_status(frames_base_dir, season_num, episode_num, "completed")
 
-def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=10):
+def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=25):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(id)
     ensure_dir_exists(frames_base_dir)
