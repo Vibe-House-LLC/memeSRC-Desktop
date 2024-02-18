@@ -1,3 +1,4 @@
+import sys
 import os
 import subprocess
 import argparse
@@ -86,7 +87,7 @@ def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
         output_pattern
     ]
     
-    subprocess.run(command)
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
     for index, subtitle in enumerate(subtitles):
@@ -117,7 +118,7 @@ def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
             output_file
         ]
         
-        subprocess.run(command)
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def ensure_dir_exists(directory):
     if not os.path.exists(directory):

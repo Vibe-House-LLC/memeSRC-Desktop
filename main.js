@@ -21,11 +21,9 @@ function ipfs(commandString, callback) {
 let ipfsDaemonProcess = null;
 
 function checkDaemonStatus() {
-    console.log("TRYING TO CHECK THE IPFS STATUS");
     return new Promise((resolve, reject) => {
         ipfs(`swarm peers`, (error, stdout, stderr) => {
             let currentStatus = !(error || stderr); // true if connected, false otherwise
-            console.log(currentStatus)
             // Instead of manipulating DOM, we resolve with the status
             resolve(currentStatus);
         });
@@ -229,27 +227,60 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
     }
 });
 
-ipcMain.handle('run-python-script', async (event, { inputPath, ffmpegPath, id }) => {
-    // Prepare options for PythonShell
-    console.log("HEYOOO")
-    let options = {
-        mode: 'text',
-        args: [
-            inputPath,
-            ffmpegPath,
-            id
-        ]
-    };
+ipcMain.on('start-python-script', (event, args) => {
+    const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
+    const { inputPath, ffmpegPath, id } = args;
 
-    // Use PythonShell to run your script
+    // Construct the command to run the Python script with arguments
+    const command = `python "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
+
+    // Execute the Python script
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`exec error: ${error}`);
+            event.sender.send('python-script-response', { success: false, error: stderr });
+            return;
+        }
+        console.log(`stdout: ${stdout}`);
+        event.sender.send('python-script-response', { success: true, output: stdout });
+    });
+
+    event.sender.send('python-script-started', { started: true });
+});
+
+ipcMain.handle('add-processed-index-to-ipfs', async (event, input) => {
+    console.log("input", input)
     return new Promise((resolve, reject) => {
-        PythonShell.run('process-index.py', options, (err, results) => {
-            if (err) {
-                console.error('Failed to run Python script:', err);
-                reject(err);
+        ipfs(`add -r ${input}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error adding processed index to IPFS:`, error || stderr);
+                reject(stderr || error);
             } else {
-                console.log('Python script executed successfully:', results);
-                resolve(results);
+                // Parse stdout to find the CID of the directory
+                const lines = stdout.split('\n');
+                const directoryLine = lines.find(line => line.endsWith(`${input}`));
+                if (directoryLine) {
+                    const cidMatch = directoryLine.match(/added (\w+) /);
+                    if (cidMatch && cidMatch[1]) {
+                        const cid = cidMatch[1];
+                        console.log(`Added processed index to IPFS with CID: ${cid}`);
+
+                        // Next, copy the directory to /memesrc/index/{CID}
+                        ipfs(`files cp /ipfs/${cid} /memesrc/index/${cid}`, (cpError, cpStdout, cpStderr) => {
+                            if (cpError || cpStderr) {
+                                console.error(`Error copying CID ${cid} to /memesrc/index/:`, cpError || cpStderr);
+                                reject(cpStderr || cpError);
+                            } else {
+                                console.log(`Copied CID ${cid} to /memesrc/index/${cid}`);
+                                resolve(cid); // Resolve with the CID of the directory after copying
+                            }
+                        });
+                    } else {
+                        reject('CID of the directory could not be parsed from the output.');
+                    }
+                } else {
+                    reject(`No directory entry found in the output for ${input}.`);
+                }
             }
         });
     });
