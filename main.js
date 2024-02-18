@@ -322,14 +322,14 @@ function createMainWindow() {
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
+        mainWindow.loadURL('http://localhost:3000');
+    } else {
+        mainWindow.loadURL('https://dev.memesrc.com/');
     }
-
-    // mainWindow.loadFile(path.join(__dirname, './index.html'));
-    // mainWindow.loadFile('video-image-test.html')
-    mainWindow.loadURL('http://localhost:3000')
 
     mainWindowState.manage(mainWindow);
 }
+
 
 
 
