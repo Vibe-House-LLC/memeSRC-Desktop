@@ -1,3 +1,4 @@
+import sys
 import os
 import subprocess
 import argparse
@@ -9,16 +10,33 @@ from pathlib import Path
 import srt
 import json
 from datetime import timedelta
+import logging
+import zipfile
 
-# Load configuration
-with open(os.path.expanduser('~/.memesrc/config.yml'), 'r') as ymlfile:
-    cfg = yaml.safe_load(ymlfile)
+# Load configuration from a YAML file or set default values
+config_path = os.path.expanduser('~/.memesrc/config.yml')
+if os.path.exists(config_path):
+    with open(config_path, 'r') as ymlfile:
+        cfg = yaml.safe_load(ymlfile)
+else:
+    cfg = {}
 
 def get_frames_dir(id):
     return os.path.join(os.path.expanduser(f"~/.memesrc/processing/{id}"))
 
-# Define the paths from the config file
-FFMPEG_PATH = cfg['ffmpeg_path']
+def setup_logging(log_path):
+    logging.basicConfig(filename=log_path, level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+    logging.info("Logging setup complete.")
+
+parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
+parser.add_argument('input_path', help='Input path of the videos and subtitles')
+parser.add_argument('ffmpeg_path', help='Path to the FFmpeg executable')
+parser.add_argument('id', help='ID for the output folder')
+parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
+parser.add_argument('--clip_duration', type=int, default=25, help='Duration of each clip in seconds')
+args = parser.parse_args()
+
+FFMPEG_PATH = args.ffmpeg_path if args.ffmpeg_path else cfg.get('ffmpeg_path', 'ffmpeg')
 
 def set_input_path(path):
     global input_path
@@ -51,7 +69,59 @@ def list_content_files():
                 content_files["subtitles"].append(os.path.join(dirpath, file))
     return content_files
 
-def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
+def ensure_dir_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+# Initialize job status with all episodes
+def initialize_job_status(content_files, frames_base_dir):
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    if os.path.exists(status_file_path):
+        with open(status_file_path, 'r') as file:
+            job_status = json.load(file)
+        # Assume the total_episodes could change if new videos are added, so update it
+        total_episodes = len(content_files["videos"])
+        job_status["total_episodes"] = total_episodes
+        # No need to overwrite episodes statuses here as they are already loaded
+    else:
+        all_episodes = {}
+        total_episodes = len(content_files["videos"])
+        
+        for video_file in content_files["videos"]:
+            season_num, episode_num = extract_season_episode(video_file)
+            season_key = f"Season {season_num}"
+            if season_key not in all_episodes:
+                all_episodes[season_key] = {}
+            all_episodes[season_key][f"Episode {episode_num}"] = "pending"
+        
+        job_status = {
+            "total_episodes": total_episodes,
+            "processed_episodes": 0,
+            "percent_complete": 0.0,
+            "episodes": all_episodes
+        }
+
+    # Update processed_episodes and percent_complete based on current status
+    processed_episodes = sum(season[episode] == "completed" for season in job_status["episodes"].values() for episode in season)
+    job_status["processed_episodes"] = processed_episodes
+    job_status["percent_complete"] = (processed_episodes / total_episodes) * 100 if total_episodes > 0 else 0
+
+    with open(status_file_path, 'w') as file:
+        json.dump(job_status, file, indent=4)
+    
+    return job_status
+
+def update_job_status(job_status, season_num, episode_num, frames_base_dir):
+    season_key = f"Season {season_num}"
+    job_status["episodes"][season_key][f"Episode {episode_num}"] = "completed"
+    job_status["processed_episodes"] += 1
+    job_status["percent_complete"] = (job_status["processed_episodes"] / job_status["total_episodes"]) * 100
+    
+    status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    with open(status_file_path, 'w') as file:
+        json.dump(job_status, file, indent=4)
+
+def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=25):
     filename_prefix = "%d"
     output_pattern = os.path.join(clips_dir, f"{filename_prefix}.mp4")
     
@@ -67,7 +137,7 @@ def extract_video_clips(episode_file, clips_dir, fps=30, clip_duration=10):
         output_pattern
     ]
     
-    subprocess.run(command)
+    subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
     for index, subtitle in enumerate(subtitles):
@@ -98,11 +168,39 @@ def extract_subtitle_clips(episode_file, subtitles, episode_dir, fps):
             output_file
         ]
         
-        subprocess.run(command)
+        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 def ensure_dir_exists(directory):
     if not os.path.exists(directory):
         os.makedirs(directory)
+
+def zip_video_clips(clips_dir):
+    # Dictionary to hold lists of files for each zip
+    zip_groups = {}
+    for filename in os.listdir(clips_dir):
+        if filename.endswith(".mp4") and filename.startswith("s"):
+            # Extract the number from the filename
+            try:
+                number = int(filename[1:-4])  # Remove 's' prefix and '.mp4' suffix
+            except ValueError:
+                continue  # Skip files that don't match the expected naming scheme
+            
+            # Determine the group for this file
+            group_number = number // 15
+            if group_number not in zip_groups:
+                zip_groups[group_number] = []
+            zip_groups[group_number].append(filename)
+    
+    # Create a zip file for each group
+    for group_number, filenames in zip_groups.items():
+        zip_filename = os.path.join(clips_dir, f"s{group_number}.zip")
+        with zipfile.ZipFile(zip_filename, 'w') as zipf:
+            for filename in filenames:
+                file_path = os.path.join(clips_dir, filename)
+                zipf.write(file_path, arcname=filename)
+                # After adding the file to zip, delete the original mp4 file
+                os.remove(file_path)  # This deletes the sX.mp4 file after it's zipped
+        print(f"Created zip file: {zip_filename}")
 
 # ==================
 # SUBTITLE HANDLING
@@ -180,11 +278,12 @@ def is_episode_processed(frames_base_dir, season_num, episode_num):
             return status_data[season_key][f"Episode {episode_num}"] == "completed"
     return False
 
-def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_duration=10):
+def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_duration=25):
     season_num, episode_num = extract_season_episode(episode_file)
     
     # Check if the episode is already processed
     if is_episode_processed(frames_base_dir, season_num, episode_num):
+        logging.info(f"Skipping Season {season_num}, Episode {episode_num} (already processed).")
         print(f"Skipping Season {season_num}, Episode {episode_num} (already processed).")
         return
 
@@ -218,10 +317,11 @@ def process_episode(episode_file, frames_base_dir, content_files, fps=10, clip_d
                     "start_frame": start_index,
                     "end_frame": end_index
                 })
+    zip_video_clips(episode_dir)
     # Mark the episode as completed after successful processing
     update_processing_status(frames_base_dir, season_num, episode_num, "completed")
 
-def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=10):
+def process_content(input_path_param, id, index_name, title, description, color_main, color_secondary, emoji, status, fps=10, clip_duration=25):
     set_input_path(input_path_param)
     frames_base_dir = get_frames_dir(id)
     ensure_dir_exists(frames_base_dir)
@@ -255,19 +355,19 @@ def process_content(input_path_param, id, index_name, title, description, color_
     top_level_data = aggregate_csv_data(frames_base_dir)
     write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
 
-def check_and_update_metadata(frames_base_dir, id_cli):
+def check_and_update_metadata(frames_base_dir, id):
     metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
     if os.path.exists(metadata_path):
         edit_metadata = input("Metadata file already exists. Do you want to edit it? [y/N]: ").lower()
         if edit_metadata == 'y':
-            return collect_metadata(id_cli)
+            return collect_metadata(id)
         else:
             with open(metadata_path, 'r') as metadata_file:
                 return json.load(metadata_file)
     else:
-        return collect_metadata(id_cli)
+        return collect_metadata(id)
 
-def collect_metadata(id_cli):
+def collect_metadata(id):
     # Collecting additional details for metadata, now in a separate function
     index_name_cli = input("Enter the name for the index: ")
     title_cli = input("Enter the title of the content: ")
@@ -278,7 +378,7 @@ def collect_metadata(id_cli):
     status_cli = input("Enter the status of the content (as an integer): ")
 
     return {
-        "id": id_cli,
+        "id": id,
         "title": title_cli,
         "description": description_cli if description_cli else None,
         "colorMain": color_main_cli,
@@ -288,37 +388,53 @@ def collect_metadata(id_cli):
     }
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Process video content into clips and index subtitles.')
-    parser.add_argument('input_path', help='Input path of the videos and subtitles')
-    parser.add_argument('--fps', type=int, default=10, help='Frames per second for the output clips')
-    parser.add_argument('--clip_duration', type=int, default=10, help='Duration of each clip in seconds')
-    args = parser.parse_args()
-
-    id_cli = input("Enter the ID for the output folder: ")
-    frames_base_dir = get_frames_dir(id_cli)
+    frames_base_dir = get_frames_dir(args.id)
     ensure_dir_exists(frames_base_dir)
 
-    # Check for existing metadata and update if necessary
-    metadata_content = check_and_update_metadata(frames_base_dir, id_cli)
+    # Set up logging
+    log_path = os.path.join(frames_base_dir, '00_log.txt')
+    setup_logging(log_path)
 
-    # Provide default values for missing keys
-    default_metadata = {
-        'id': id_cli,  # Use the folder ID as a fallback
-        'index_name': 'default_index',
-        'title': 'Untitled',
-        'description': '',
+    logging.info(f"Source: {args.input_path}")
+    logging.info(f"Destination: {get_frames_dir(args.id)}")
+
+    # Set metadata directly using the 'id' without collecting user input
+    metadata_content = {
+        'id': args.id,
+        'index_name': args.id,  # Use 'id' for 'index_name'
+        'title': args.id,  # Use 'id' for 'title'
+        'description': 'Auto-generated content',  # Default description
         'color_main': '#FFFFFF',  # Default white
         'color_secondary': '#000000',  # Default black
-        'emoji': '',
-        'status': '0',
+        'emoji': '🎥',  # Default emoji for video content
+        'status': '1',  # Default status to indicate active or processed
     }
 
-    # Update the default_metadata with the actual values from metadata_content
-    default_metadata.update(metadata_content)
+    # Write the metadata content to the '00_metadata.json' file
+    metadata_path = os.path.join(frames_base_dir, '00_metadata.json')
+    with open(metadata_path, 'w') as metadata_file:
+        json.dump(metadata_content, metadata_file, indent=4)
 
-    # Prepare the arguments for process_content
-    expected_keys = ['id', 'index_name', 'title', 'description', 'color_main', 'color_secondary', 'emoji', 'status']
-    filtered_metadata_content = {k: default_metadata[k] for k in expected_keys}
+    set_input_path(args.input_path)
+    content_files = list_content_files()
 
-    # Call process_content with the filtered metadata content
-    process_content(args.input_path, **filtered_metadata_content, fps=args.fps, clip_duration=args.clip_duration)
+    # Initialize job status with all episodes marked as pending
+    job_status = initialize_job_status(content_files, frames_base_dir)
+
+    for episode_file in content_files["videos"]:
+        logging.info(f"About to process: {episode_file}")
+        process_episode(episode_file, frames_base_dir, content_files, args.fps, args.clip_duration)
+        season_num, episode_num = extract_season_episode(episode_file)
+        update_job_status(job_status, season_num, episode_num, frames_base_dir)
+
+    # Process CSV data for subtitles at the end, if subtitles were found and processed
+    for season_dir in os.listdir(frames_base_dir):
+        season_path = os.path.join(frames_base_dir, season_dir)
+        if os.path.isdir(season_path):
+            season_data = aggregate_csv_data(season_path)
+            write_aggregated_csv(season_data, os.path.join(season_path, '_docs.csv'))
+    top_level_data = aggregate_csv_data(frames_base_dir)
+    write_aggregated_csv(top_level_data, os.path.join(frames_base_dir, '_docs.csv'))
+
+    # Log the completion of the process
+    logging.info("Processing completed successfully.")

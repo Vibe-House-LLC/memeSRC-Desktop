@@ -1,12 +1,19 @@
+const os = require('os');
+const fs = require('fs').promises;
 const path = require('path');
 const { app, BrowserWindow, ipcMain } = require('electron');
 const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
+const { promisify } = require('util');
+const { PythonShell } = require('python-shell');
+
+const execAsync = promisify(exec);
 
 const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
 
 const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
+// const pythonExecutable = path.join(__dirname, 'node_modules', 'python', 'bin', 'python');
 
 // IPFS functions
 
@@ -17,11 +24,9 @@ function ipfs(commandString, callback) {
 let ipfsDaemonProcess = null;
 
 function checkDaemonStatus() {
-    console.log("TRYING TO CHECK THE IPFS STATUS");
     return new Promise((resolve, reject) => {
         ipfs(`swarm peers`, (error, stdout, stderr) => {
             let currentStatus = !(error || stderr); // true if connected, false otherwise
-            console.log(currentStatus)
             // Instead of manipulating DOM, we resolve with the status
             resolve(currentStatus);
         });
@@ -52,6 +57,45 @@ function toggleIpfsDaemon() {
     }
 }
 
+function fetchBandwidthStats() {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} stats bw`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error("Error fetching bandwidth stats:", error || stderr);
+                reject(stderr || error);
+            } else {
+                const stats = parseBandwidthStats(stdout);
+                resolve(stats);
+            }
+        });
+    });
+}
+
+function parseBandwidthStats(output) {
+    const stats = {};
+    const lines = output.split("\n");
+    lines.forEach((line) => {
+        if (line.includes(":")) {
+            let [key, value] = line.split(":").map((item) => item.trim());
+            // Convert value to bytes
+            value = convertToBytes(value);
+            stats[key] = value;
+        }
+    });
+    return stats;
+}
+
+// Helper function to convert values with units to bytes
+function convertToBytes(valueWithUnit) {
+    const units = { kB: 1024, MB: 1024 * 1024, GB: 1024 * 1024 * 1024 };
+    const match = valueWithUnit.match(/([\d.]+)\s*(kB|MB|GB|B)?/);
+    if (!match) return null;
+    const value = parseFloat(match[1]);
+    const unit = match[2];
+    const multiplier = units[unit] || 1;
+    return value * multiplier;
+}
+
 // IPC handler definitions
 
 ipcMain.handle('check-daemon-status', async (event) => {
@@ -73,6 +117,205 @@ ipcMain.handle('toggle-ipfs-daemon', async (event) => {
         return { success: false, message: `Error toggling IPFS daemon: ${error}` };
     }
 });
+
+ipcMain.handle('fetch-bandwidth-stats', async (event) => {
+    try {
+        const stats = await fetchBandwidthStats();
+        // Assuming you want to include a simplified response with only byte values
+        return { success: true, stats: stats };
+    } catch (error) {
+        console.error('Failed to fetch bandwidth stats:', error);
+        return { success: false, message: `Error fetching bandwidth stats: ${error}` };
+    }
+});
+
+ipcMain.handle('fetch-metadata', (event, itemCid) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} cat ${itemCid}/00_metadata.json`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.warn(`Error fetching metadata for CID ${itemCid}:`, error || stderr);
+                resolve(null); // Resolve with null if there's an error
+            } else {
+                try {
+                    const metadata = JSON.parse(stdout);
+                    resolve(metadata);
+                } catch (parseError) {
+                    console.error(`Error parsing metadata for CID ${itemCid}:`, parseError);
+                    resolve(null);
+                }
+            }
+        });
+    });
+});
+
+ipcMain.handle('fetch-processing-status', async (event, id) => {
+    const statusPath = path.join(os.homedir(), '.memesrc', 'processing', id, 'processing_status.json');
+    try {
+        // Correctly using fs.promises.readFile with 'utf8' encoding
+        const data = await fs.readFile(statusPath, 'utf8');
+        const status = JSON.parse(data);
+        return { success: true, status };
+    } catch (error) {
+        console.error(`Failed to fetch processing status for ID ${id}:`, error);
+        return { success: false, message: `Error fetching processing status for ID ${id}: ${error.message}` };
+    }
+});
+
+ipcMain.handle('check-pin-status', (event, cid) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} pin ls --type=recursive ${cid}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error checking pin status for CID ${cid}:`, error || stderr);
+                resolve({ success: false, isPinned: false, message: stderr || error.message });
+            } else {
+                // If the CID is found in the output, it's considered pinned
+                const isPinned = stdout.includes(cid);
+                resolve({ success: true, isPinned: isPinned, message: `CID ${cid} is ${isPinned ? 'pinned' : 'not pinned'}.` });
+            }
+        });
+    });
+});
+
+ipcMain.handle('pin-item', async (event, cid) => {
+    try {
+        const { stdout, stderr } = await execAsync(`${ipfsExecutable} pin add ${cid}`);
+        if (stderr) {
+            console.error(`Error pinning CID ${cid}:`, stderr);
+            return { success: false, message: stderr };
+        } else {
+            console.log(`Pinned CID ${cid}:`, stdout);
+            return { success: true, message: stdout };
+        }
+    } catch (error) {
+        console.error(`Error pinning CID ${cid}:`, error);
+        return { success: false, message: error.message };
+    }
+});
+
+ipcMain.handle('unpin-item', async (event, cid) => {
+    try {
+        const { stdout, stderr } = await execAsync(`${ipfsExecutable} pin rm ${cid}`);
+        if (stderr) {
+            console.error(`Error unpinning CID ${cid}:`, stderr);
+            return { success: false, message: stderr };
+        } else {
+            console.log(`Unpinned CID ${cid}:`, stdout);
+            return { success: true, message: stdout };
+        }
+    } catch (error) {
+        console.error(`Error unpinning CID ${cid}:`, error);
+        return { success: false, message: error.message };
+    }
+});
+
+ipcMain.handle('list-directory-contents', (event, directory) => {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files ls ${directory}`, async (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error listing directory contents:`, error || stderr);
+                reject(stderr || error);
+            } else {
+                const itemNames = stdout.split('\n').filter(line => line.trim() !== '');
+                const itemsDetailsPromises = itemNames.map(name => fetchItemDetails(directory, name));
+                Promise.all(itemsDetailsPromises)
+                    .then(itemsDetails => {
+                        resolve(itemsDetails);
+                    })
+                    .catch(err => {
+                        console.error("Error fetching item details:", err);
+                        reject(err);
+                    });
+            }
+        });
+    });
+});
+
+ipcMain.handle('add-cid-to-index', async (event, cid) => {
+    try {
+        const destinationPath = `/memesrc/index/${cid}`;
+        await execAsync(`${ipfsExecutable} files cp /ipfs/${cid} ${destinationPath}`);
+        console.log(`Copied CID ${cid} to ${destinationPath}`);
+        // You might want to refresh or update some UI element or data structure here
+        return { success: true, message: `Copied CID ${cid} to ${destinationPath}` };
+    } catch (error) {
+        console.error(`Error copying CID to /memesrc/index/:`, error);
+        return { success: false, message: `Error copying CID to /memesrc/index/: ${error.message}` };
+    }
+});
+
+ipcMain.on('start-python-script', (event, args) => {
+    const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
+    const { inputPath, id } = args;
+
+    const ffmpegPath = require('ffmpeg-static');
+    console.log("ffmpeg path:", ffmpegPath)
+
+    // Construct the command to run the Python script with arguments
+    const command = `python "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
+
+    // Execute the Python script
+    exec(command, (error, stdout, stderr) => {
+        if (error) {
+            console.error(`exec error: ${error}`);
+            event.sender.send('python-script-response', { success: false, error: stderr });
+            return;
+        }
+        console.log(`stdout: ${stdout}`);
+        event.sender.send('python-script-response', { success: true, output: stdout });
+    });
+
+    event.sender.send('python-script-started', { started: true });
+});
+
+ipcMain.handle('add-processed-index-to-ipfs', async (event, input) => {
+    console.log("Adding processed index to ipfs:")
+    console.log("input", input)
+    return new Promise((resolve, reject) => {
+        ipfs(`add -r ${input}`, (error, stdout, stderr) => {
+            console.log(stdout)
+            // Parse stdout to find the CID of the directory
+            const lines = stdout.split('\n');
+            // Extract the directory name from the input path
+            const directoryName = input.split('/').pop();
+            const directoryLine = lines.find(line => line.endsWith(`${directoryName}`));
+            console.log("directoryLine", directoryLine)
+            if (directoryLine) {
+                const cidMatch = directoryLine.match(/added (\w+) /);
+                if (cidMatch && cidMatch[1]) {
+                    const cid = cidMatch[1];
+                    console.log(`Added processed index to IPFS with CID: ${cid}`);
+
+                    // Next, copy the directory to /memesrc/index/{CID}
+                    ipfs(`files cp /ipfs/${cid} /memesrc/index/${cid}`, (cpError, cpStdout, cpStderr) => {
+                        resolve(cid); // Resolve with the CID of the directory after copying
+                    });
+                } else {
+                    reject('CID of the directory could not be parsed from the output.');
+                }
+            } else {
+                reject(`No directory entry found in the output for ${input}.`);
+            }
+        });
+    });
+});
+
+function fetchItemDetails(directory, name) {
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files stat ${path.join(directory, name)}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error fetching details for ${name}:`, error || stderr);
+                reject(stderr || error);
+            } else {
+                const details = stdout.split('\n').reduce((acc, line) => {
+                    if (line.includes('Size:')) acc.size = line.split(':')[1].trim();
+                    if (line.includes('CumulativeSize:')) acc.cumulative_size = line.split(':')[1].trim();
+                    return acc;
+                }, { name, cid: stdout.split('\n')[0].trim() });
+                resolve(details);
+            }
+        });
+    });
+}
 
 ipcMain.on('load-index-html', () => {
     mainWindow.loadFile(path.join(__dirname, './index.html'));
@@ -98,14 +341,14 @@ function createMainWindow() {
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
+        mainWindow.loadURL('http://localhost:3000');
+    } else {
+        mainWindow.loadURL('https://dev.memesrc.com/');
     }
-
-    // mainWindow.loadFile(path.join(__dirname, './index.html'));
-    // mainWindow.loadFile('video-image-test.html')
-    mainWindow.loadURL('http://localhost:3000')
 
     mainWindowState.manage(mainWindow);
 }
+
 
 
 
