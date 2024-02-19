@@ -75,24 +75,37 @@ def ensure_dir_exists(directory):
 
 # Initialize job status with all episodes
 def initialize_job_status(content_files, frames_base_dir):
-    all_episodes = {}
-    total_episodes = len(content_files["videos"])
-    
-    for video_file in content_files["videos"]:
-        season_num, episode_num = extract_season_episode(video_file)
-        season_key = f"Season {season_num}"
-        if season_key not in all_episodes:
-            all_episodes[season_key] = {}
-        all_episodes[season_key][f"Episode {episode_num}"] = "pending"
-    
-    job_status = {
-        "total_episodes": total_episodes,
-        "processed_episodes": 0,
-        "percent_complete": 0.0,
-        "episodes": all_episodes
-    }
-    
     status_file_path = os.path.join(frames_base_dir, 'processing_status.json')
+    if os.path.exists(status_file_path):
+        with open(status_file_path, 'r') as file:
+            job_status = json.load(file)
+        # Assume the total_episodes could change if new videos are added, so update it
+        total_episodes = len(content_files["videos"])
+        job_status["total_episodes"] = total_episodes
+        # No need to overwrite episodes statuses here as they are already loaded
+    else:
+        all_episodes = {}
+        total_episodes = len(content_files["videos"])
+        
+        for video_file in content_files["videos"]:
+            season_num, episode_num = extract_season_episode(video_file)
+            season_key = f"Season {season_num}"
+            if season_key not in all_episodes:
+                all_episodes[season_key] = {}
+            all_episodes[season_key][f"Episode {episode_num}"] = "pending"
+        
+        job_status = {
+            "total_episodes": total_episodes,
+            "processed_episodes": 0,
+            "percent_complete": 0.0,
+            "episodes": all_episodes
+        }
+
+    # Update processed_episodes and percent_complete based on current status
+    processed_episodes = sum(season[episode] == "completed" for season in job_status["episodes"].values() for episode in season)
+    job_status["processed_episodes"] = processed_episodes
+    job_status["percent_complete"] = (processed_episodes / total_episodes) * 100 if total_episodes > 0 else 0
+
     with open(status_file_path, 'w') as file:
         json.dump(job_status, file, indent=4)
     
