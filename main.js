@@ -13,7 +13,6 @@ const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
 
 const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
-// const pythonExecutable = path.join(__dirname, 'node_modules', 'python', 'bin', 'python');
 
 // IPFS functions
 
@@ -243,28 +242,55 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
     }
 });
 
-ipcMain.on('start-python-script', (event, args) => {
-    const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
-    const { inputPath, id } = args;
-
-    const ffmpegPath = require('ffmpeg-static');
-    console.log("ffmpeg path:", ffmpegPath)
-
-    // Construct the command to run the Python script with arguments
-    const command = `python "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
-
-    // Execute the Python script
-    exec(command, (error, stdout, stderr) => {
-        if (error) {
-            console.error(`exec error: ${error}`);
-            event.sender.send('python-script-response', { success: false, error: stderr });
-            return;
+ipcMain.on('start-python-script', async (event, args) => { // Mark the callback as async
+    // Async function to load the pythonExecutable path from the configuration file
+    const loadPythonExecutable = async () => {
+        try {
+            const configPath = path.join(process.resourcesPath, 'pythonPath.json');
+            const configData = await fs.readFile(configPath, 'utf-8'); // Use await to handle the promise
+            const config = JSON.parse(configData);
+            if (!config.pythonPath) {
+                throw new Error('pythonPath is not defined in the configuration.');
+            }
+            return config.pythonPath;
+        } catch (error) {
+            console.warn('Could not load Python path from configuration. Error:', error);
+            throw error; // Rethrow to handle it outside
         }
-        console.log(`stdout: ${stdout}`);
-        event.sender.send('python-script-response', { success: true, output: stdout });
-    });
+    };
 
-    event.sender.send('python-script-started', { started: true });
+    try {
+        // Await the loading of the pythonExecutable path
+        const pythonExecutable = await loadPythonExecutable();
+
+        console.log("Python executable:", pythonExecutable);
+
+        // Proceed with the rest of the script only if pythonExecutable is successfully retrieved
+        const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
+        const { inputPath, id } = args;
+
+        const ffmpegPath = require('ffmpeg-static');
+        console.log("FFmpeg path:", ffmpegPath);
+
+        // Construct the command to run the Python script with arguments
+        const command = `${pythonExecutable} "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
+
+        // Execute the Python script
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Exec error: ${error}`);
+                event.sender.send('python-script-response', { success: false, error: stderr });
+                return;
+            }
+            console.log(`Stdout: ${stdout}`);
+            event.sender.send('python-script-response', { success: true, output: stdout });
+        });
+
+        event.sender.send('python-script-started', { started: true });
+    } catch (error) {
+        // Handle errors, such as file not found or pythonPath not defined
+        event.sender.send('python-script-response', { success: false, error: error.toString() });
+    }
 });
 
 ipcMain.handle('add-processed-index-to-ipfs', async (event, input) => {
