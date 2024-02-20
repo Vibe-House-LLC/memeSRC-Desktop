@@ -1,7 +1,7 @@
 const os = require('os');
 const fs = require('fs').promises;
 const path = require('path');
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
@@ -323,6 +323,13 @@ ipcMain.handle('add-processed-index-to-ipfs', async (event, input) => {
             }
         });
     });
+});
+
+ipcMain.handle("open-directory-dialog", async (event) => {
+  const { filePaths } = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
+  });
+    return filePaths[0];
 });
 
 function fetchItemDetails(directory, name) {
