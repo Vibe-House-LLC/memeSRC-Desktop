@@ -254,8 +254,9 @@ ipcMain.on('start-python-script', async (event, args) => { // Mark the callback 
             }
             return config.pythonPath;
         } catch (error) {
-            console.warn('Could not load Python path from configuration. Error:', error);
-            throw error; // Rethrow to handle it outside
+            console.warn('Could not load Python path from configuration or file not found. Using default path. Error:', error);
+            // If the file can't be found or another error occurs, use 'python' as the default
+            return 'python'; // Return the default python path
         }
     };
 
