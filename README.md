@@ -29,5 +29,3 @@ npm run start-prod
 | macOS (arm64) | `npm run package-mac-arm` |
 | macOS (intel) | `npm run package-mac-intel` |
 | Windows (x64) | `npm run package-win` |
-
-Windows builds (unsigned) are currently available as [Action artifacts](https://github.com/Vibe-House-LLC/memeSRC-Desktop/actions).
