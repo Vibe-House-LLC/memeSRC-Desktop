@@ -311,8 +311,9 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
 
 ipcMain.on('test-javascript-processing', async (event, args) => {
     const { inputPath, id } = args;
+    console.log("args: ", { inputPath, id });
     try {
-        const seasonEpisodes = await processDirectory(inputPath);
+        const seasonEpisodes = await processDirectory(inputPath, id);
         event.reply('javascript-processing-result', { id, seasonEpisodes });
     } catch (error) {
         console.error('Failed to process directory', error);
