@@ -100,6 +100,19 @@ function getFileType(filename) {
     return null;
 }
 
+async function createMetadataFile(id) {
+    const metadataDir = path.join(os.homedir(), '.memesrc', 'processing', id);
+    const metadataPath = path.join(metadataDir, '00_metadata.json');
+    const metadataContent = {
+        id: id,
+        index_name: id,
+        title: id
+    };
+    await fs.mkdir(metadataDir, { recursive: true }); // Ensure the directory exists
+    await fs.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
+}
+
+
 async function processDirectoryInternal(directoryPath, id) {
     const entries = await fs.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
@@ -130,6 +143,7 @@ async function processDirectoryInternal(directoryPath, id) {
 async function processDirectory(directoryPath, id) {
     try {
         console.log("ID: ", id);
+        await createMetadataFile(id); // Create metadata file
         const seasonEpisodes = await processDirectoryInternal(directoryPath, id);
         const seasonEpisodeSummary = seasonEpisodes.reduce((acc, { season, episode, type }) => {
             const key = `Season ${season}, Episode ${episode}`;
