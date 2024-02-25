@@ -22,14 +22,20 @@ function createVenvWithFallback(pythonAliases, venvDir) {
 
 try {
   // Attempt to create a virtual environment with fallback Python aliases
-  const pythonAlias = createVenvWithFallback(['python3', 'python', 'python3.10', 'python3.9', 'python3.8'], venvDir);
+  const pythonAlias = createVenvWithFallback(['python', 'python3', 'python3.10', 'python3.9', 'python3.8'], venvDir);
   console.log('Virtual environment created');
 
   // Adjust the Python path for executing further commands
-  const pythonPath = path.join(venvDir, 'bin', pythonAlias);
+  // Determine the path to the Python executable based on the operating system
+  const isWindows = process.platform === "win32";
+  const pythonExecutableName = isWindows ? 'python.exe' : pythonAlias;
+  const binDir = isWindows ? 'Scripts' : 'bin';
+  const pythonPath = path.join(venvDir, binDir, pythonExecutableName);
+
 
   // Activate the virtual environment and install requirements
-  execSync(`${pythonPath} -m pip install -r ${requirementsPath}`, { stdio: 'inherit', shell: '/bin/bash' });
+  execSync(`${pythonPath} -m pip install -r ${requirementsPath}`, { stdio: 'inherit' });
+
   console.log('Dependencies installed');
 
   console.log(`Using Python at: ${pythonPath}`);

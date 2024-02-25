@@ -5,16 +5,17 @@
   "description": "memeSRC Desktop",
   "main": "main.js",
   "scripts": {
-    "start": "NODE_ENV=dev electron .",
+    "start": "cross-env NODE_ENV=dev electron .",
     "start-prod": "electron .",
     "prepackage": "node prebuild.js",
     "package-mac-arm": "npm run prepackage && electron-packager . --overwrite --platform=darwin --arch=arm64 --icon=icon.icns --prune=true --out=release-builds --extra-resource=pythonPath.json",
     "package-mac-intel": "npm run prepackage && electron-packager . --overwrite --platform=darwin --arch=x64 --icon=icon.icns --prune=true --out=release-builds --extra-resource=pythonPath.json",
-    "package-win": "electron-packager . --overwrite --platform=win32 --arch=x64 --icon=icon.ico --prune=true --out=release-builds"
-  },
+    "package-win": "npm run prepackage && electron-packager . --overwrite --platform=win32 --arch=x64 --icon=icon.ico --prune=true --out=release-builds"
+  },  
   "author": "Vibe House LLC",
   "license": "MIT",
   "devDependencies": {
+    "cross-env": "^7.0.3",
     "electron": "^28.2.0",
     "electron-packager": "^17.1.2"
   },
