@@ -37,17 +37,38 @@ function toggleIpfsDaemon() {
         console.log('Starting IPFS daemon...');
         ipfsDaemonProcess = spawn(ipfsExecutable, ['daemon']);
 
+        let initAttempted = false; // Flag to prevent multiple init attempts
+
         ipfsDaemonProcess.stdout.on('data', (data) => {
             console.log(`stdout: ${data}`);
         });
 
         ipfsDaemonProcess.stderr.on('data', (data) => {
             console.error(`stderr: ${data}`);
+            // Check if the error is about the missing IPFS repo and if we haven't attempted to init yet
+            if (data.includes("no IPFS repo found") && !initAttempted) {
+                console.log("No IPFS repo found. Initializing IPFS...");
+                initAttempted = true; // Set flag to true to prevent multiple init attempts
+                // Execute 'ipfs init'
+                exec(`${ipfsExecutable} init`, (initError, initStdout, initStderr) => {
+                    if (initError || initStderr) {
+                        console.error(`Error initializing IPFS: ${initError || initStderr}`);
+                    } else {
+                        console.log('IPFS initialized successfully. Attempting to start daemon again...');
+                        // Attempt to start the daemon again after initialization
+                        toggleIpfsDaemon();
+                    }
+                });
+            }
         });
 
         ipfsDaemonProcess.on('close', (code) => {
             console.log(`IPFS daemon process exited with code ${code}`);
             ipfsDaemonProcess = null;
+            if (code === 1 && !initAttempted) {
+                // If the daemon failed to start and no init attempt was made, it means the process exited for another reason
+                console.error("IPFS daemon failed to start for a reason other than missing repo.");
+            }
         });
     } else {
         console.log('Stopping IPFS daemon...');
@@ -55,6 +76,7 @@ function toggleIpfsDaemon() {
         ipfsDaemonProcess = null;
     }
 }
+
 
 function fetchBandwidthStats() {
     return new Promise((resolve, reject) => {
@@ -207,27 +229,71 @@ ipcMain.handle('unpin-item', async (event, cid) => {
     }
 });
 
-ipcMain.handle('list-directory-contents', (event, directory) => {
+ipcMain.handle('list-directory-contents', async (event, directory) => {
+    try {
+        // Check if the directory exists first
+        const exists = await directoryExists(directory);
+        if (!exists) {
+            console.log(`Directory ${directory} does not exist. Creating...`);
+            // Attempt to create the directory if it doesn't exist
+            await createDirectory(directory);
+            // After creating, you might want to return an empty list or a specific message
+            return []; // Directory is empty since it was just created
+        }
+
+        // If the directory exists, proceed to list its contents
+        const itemNames = await listDirectoryContents(directory);
+        return itemNames;
+    } catch (error) {
+        console.error(`Error listing directory contents:`, error);
+        // Return an error message or code as needed
+        throw error; // Or return a custom error object/message
+    }
+});
+
+async function directoryExists(directory) {
+    // Implement a check to see if the directory exists in IPFS
     return new Promise((resolve, reject) => {
-        exec(`${ipfsExecutable} files ls ${directory}`, async (error, stdout, stderr) => {
+        exec(`${ipfsExecutable} files stat ${directory}`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                // If there's an error or stderr, assume the directory doesn't exist
+                resolve(false);
+            } else {
+                resolve(true);
+            }
+        });
+    });
+}
+
+async function createDirectory(directory) {
+    // Implement the logic to create a directory in IPFS
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files mkdir ${directory} -p`, (error, stdout, stderr) => {
+            if (error || stderr) {
+                console.error(`Error creating directory ${directory}:`, error || stderr);
+                reject(stderr || error);
+            } else {
+                console.log(`Directory ${directory} created successfully.`);
+                resolve(true);
+            }
+        });
+    });
+}
+
+async function listDirectoryContents(directory) {
+    // List the contents of the directory
+    return new Promise((resolve, reject) => {
+        exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
             if (error || stderr) {
                 console.error(`Error listing directory contents:`, error || stderr);
                 reject(stderr || error);
             } else {
                 const itemNames = stdout.split('\n').filter(line => line.trim() !== '');
-                const itemsDetailsPromises = itemNames.map(name => fetchItemDetails(directory, name));
-                Promise.all(itemsDetailsPromises)
-                    .then(itemsDetails => {
-                        resolve(itemsDetails);
-                    })
-                    .catch(err => {
-                        console.error("Error fetching item details:", err);
-                        reject(err);
-                    });
+                resolve(itemNames);
             }
         });
     });
-});
+}
 
 ipcMain.handle('add-cid-to-index', async (event, cid) => {
     try {
@@ -375,7 +441,8 @@ function createMainWindow() {
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
-        mainWindow.loadURL('http://localhost:3000');
+        // mainWindow.loadURL('http://localhost:3000');
+        mainWindow.loadURL('https://dev.memesrc.com/');
     } else {
         mainWindow.loadURL('https://dev.memesrc.com/');
     }
