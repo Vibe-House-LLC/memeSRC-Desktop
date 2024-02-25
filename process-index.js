@@ -5,6 +5,11 @@ const os = require('os');
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
 const subtitleExtensions = new Set(['.srt']);
 
+// Encode text to base64
+function encodeBase64(text) {
+    return Buffer.from(text, 'utf-8').toString('base64');
+}
+
 async function ensureMemesrcDir(id, season = '', episode = '') {
     const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
     await fs.mkdir(memesrcDir, { recursive: true });
@@ -13,23 +18,35 @@ async function ensureMemesrcDir(id, season = '', episode = '') {
 
 async function parseSRT(filePath) {
     const content = await fs.readFile(filePath, 'utf-8');
-    const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map(caption => {
-        const [index, time, ...textLines] = caption.split(/\r?\n/);
+    const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map((caption, index) => {
+        const [indexLine, time, ...textLines] = caption.split(/\r?\n/);
         const [startTime, endTime] = time.split(' --> ');
         const text = textLines.join(' ');
-        return { startTime, endTime, text };
+        return { index, startTime, endTime, text };
     });
     return captions;
 }
 
 async function writeCaptionsAsCSV(captions, season, episode, id) {
-    const csvFileName = `_docs.csv`;
-    const memesrcDir = await ensureMemesrcDir(id, `${season}`, `${episode}`); // Ensure directory with season and episode
-    const csvLines = captions.map(({ startTime, endTime, text }) =>
-        `"${startTime}","${endTime}","${text.replace(/"/g, '""')}"`);
-    const csvContent = 'Start Time,End Time,Text\n' + csvLines.join('\n');
-    const finalOutputPath = path.join(memesrcDir, csvFileName); // Use the updated directory path
-    await fs.writeFile(finalOutputPath, csvContent, 'utf-8');
+  const csvFileName = `_docs.csv`;
+  const memesrcDir = await ensureMemesrcDir(id, `${season}`, `${episode}`); // Ensure directory with season and episode
+  const csvLines = captions.map(({ index, startTime, endTime, text }) => {
+      // Convert startTime and endTime to frame index (at 10 fps)
+      const startFrame = timeToFrameIndex(startTime);
+      const endFrame = timeToFrameIndex(endTime);
+      return `${season},${episode},${index},"${encodeBase64(text)}",${startFrame},${endFrame}`;
+  });
+  const csvContent = 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n' + csvLines.join('\n');
+  const finalOutputPath = path.join(memesrcDir, csvFileName); // Use the updated directory path
+  await fs.writeFile(finalOutputPath, csvContent, 'utf-8');
+}
+
+// Helper function to convert timecode to frame index
+function timeToFrameIndex(time) {
+  const [hours, minutes, seconds] = time.split(':');
+  const [sec, ms] = seconds.split(',');
+  const totalSeconds = parseInt(hours, 10) * 3600 + parseInt(minutes, 10) * 60 + parseInt(sec, 10) + parseInt(ms, 10) / 1000;
+  return Math.round(totalSeconds * 10); // Convert to frame index at 10 fps
 }
 
 async function extractSeasonEpisode(filename) {
@@ -72,7 +89,6 @@ async function processDirectoryInternal(directoryPath, id) {
                 const fileType = getFileType(entry.name);
                 if (fileType === 'subtitle') {
                     const captions = await parseSRT(fullPath);
-                    // Use the season and episode for naming and directory structuring
                     await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
                 }
                 if (fileType) {
