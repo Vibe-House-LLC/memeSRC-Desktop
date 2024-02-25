@@ -1,66 +1,111 @@
-const fs = require('fs');
+const fs = require('fs').promises;
 const path = require('path');
-const yaml = require('js-yaml');
-const { exec } = require('child_process');
-const AdmZip = require('adm-zip');
-const { parse } = require('subtitles-parser-vtt');
+const os = require('os');
 
-const configPath = path.join(require('os').homedir(), '.memesrc', 'config.yml');
-const cfg = yaml.load(fs.readFileSync(configPath, 'utf8'));
-const FFMPEG_PATH = cfg['ffmpeg_path'];
+const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
+const subtitleExtensions = new Set(['.srt']);
+const memesrcDir = path.join(os.homedir(), '.memesrc');
 
-function getFramesDir(name) {
-    return path.join(require('os').homedir(), `.memesrc/processing/${name}`);
+async function ensureMemesrcDir() {
+    await fs.mkdir(memesrcDir, { recursive: true });
 }
 
-function extractAllFrames(episodeFile, framesDir, fps = 10) {
-    return new Promise((resolve, reject) => {
-        const command = `${FFMPEG_PATH} -i "${episodeFile}" -r ${fps} -qscale:v 2 -start_number 0 "${path.join(framesDir, '%09d.jpg')}"`;
-        exec(command, (error) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
-                return reject(error);
+async function parseSRT(filePath) {
+    const content = await fs.readFile(filePath, 'utf-8');
+    const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map(caption => {
+        const [index, time, ...textLines] = caption.split(/\r?\n/);
+        const [startTime, endTime] = time.split(' --> ');
+        const text = textLines.join(' ');
+        return { startTime, endTime, text };
+    });
+    return captions;
+}
+
+async function writeCaptionsAsCSV(captions, outputPath) {
+    const csvLines = captions.map(({ startTime, endTime, text }) =>
+        `"${startTime}","${endTime}","${text.replace(/"/g, '""')}"`);
+    const csvContent = 'Start Time,End Time,Text\n' + csvLines.join('\n');
+    await fs.writeFile(outputPath, csvContent, 'utf-8');
+}
+
+async function extractSeasonEpisode(filename) {
+    const SEPattern = /S(\d+)E(\d+)|S(\d+)\.E(\d+)|(\d+)x(\d+)|(\d+)-(\d+)/i;
+    const match = filename.match(SEPattern);
+
+    if (match) {
+        for (let i = 1; i < match.length; i += 2) {
+            if (match[i] && match[i + 1]) {
+                return { season: parseInt(match[i], 10), episode: parseInt(match[i + 1], 10) };
             }
-            resolve();
-        });
-    });
-}
-
-function createZipFilesForFrames(framesDir) {
-    const files = fs.readdirSync(framesDir).filter(file => file.endsWith('.jpg'));
-    const zip = new AdmZip();
-
-    files.forEach(file => {
-        const filePath = path.join(framesDir, file);
-        zip.addLocalFile(filePath);
-    });
-
-    const zipPath = path.join(framesDir, 'frames.zip');
-    zip.writeZip(zipPath);
-
-    files.forEach(file => {
-        fs.unlinkSync(path.join(framesDir, file));
-    });
-
-    console.log('Frames zipped successfully');
-}
-
-async function main() {
-    const episodeFile = '/path/to/video/file.mp4';
-    const indexName = 'exampleIndex';
-    const framesDir = getFramesDir(indexName);
-
-    if (!fs.existsSync(framesDir)) {
-        fs.mkdirSync(framesDir, { recursive: true });
+        }
     }
 
+    return null;
+}
+
+function getFileType(filename) {
+    const extension = path.extname(filename).toLowerCase();
+    if (mediaExtensions.has(extension)) {
+        return 'media';
+    } else if (subtitleExtensions.has(extension)) {
+        return 'subtitle';
+    }
+    return null;
+}
+
+async function processDirectoryInternal(directoryPath) {
+    await ensureMemesrcDir();
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    let seasonEpisodes = [];
+
+    for (let entry of entries) {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            const subDirectorySeasonEpisodes = await processDirectoryInternal(fullPath);
+            seasonEpisodes.push(...subDirectorySeasonEpisodes);
+        } else {
+            const seasonEpisode = await extractSeasonEpisode(entry.name);
+            if (seasonEpisode) {
+                const fileType = getFileType(entry.name);
+                if (fileType === 'subtitle') {
+                    const captions = await parseSRT(fullPath);
+                    const csvFileName = entry.name.replace(path.extname(entry.name), '.csv');
+                    const csvPath = path.join(memesrcDir, csvFileName);
+                    await writeCaptionsAsCSV(captions, csvPath);
+                }
+                if (fileType) {
+                    seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
+                }
+            }
+        }
+    }
+
+    return seasonEpisodes;
+}
+
+async function processDirectory(directoryPath) {
     try {
-        await extractAllFrames(episodeFile, framesDir);
-        createZipFilesForFrames(framesDir);
-        console.log('Episode processed successfully');
-    } catch (error) {
-        console.error('Error processing episode:', error);
+        const seasonEpisodes = await processDirectoryInternal(directoryPath);
+
+        const seasonEpisodeSummary = seasonEpisodes.reduce((acc, { season, episode, type }) => {
+            const key = `Season ${season}, Episode ${episode}`;
+            if (!acc[key]) {
+                acc[key] = { media: false, subtitle: false };
+            }
+            acc[key][type] = true;
+            return acc;
+        }, {});
+
+        console.log("Season-Episode Summary:");
+        Object.entries(seasonEpisodeSummary).forEach(([key, { media, subtitle }]) => {
+            console.log(`${key}: Media - ${media ? 'Yes' : 'No'}, Subtitle - ${subtitle ? 'Yes' : 'No'}`);
+        });
+
+        return seasonEpisodes;
+    } catch (err) {
+        console.error('Error reading directory:', err);
+        throw err;
     }
 }
 
-main();
+module.exports = { processDirectory };

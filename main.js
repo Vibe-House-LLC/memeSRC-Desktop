@@ -6,6 +6,7 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
+const { processDirectory } = require('./process-index');
 
 const execAsync = promisify(exec);
 
@@ -308,6 +309,17 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
     }
 });
 
+ipcMain.on('test-javascript-processing', async (event, args) => {
+    const { inputPath, id } = args;
+    try {
+        const seasonEpisodes = await processDirectory(inputPath);
+        event.reply('javascript-processing-result', { id, seasonEpisodes });
+    } catch (error) {
+        console.error('Failed to process directory', error);
+        event.reply('javascript-processing-error', { id, error: error.message });
+    }
+});
+
 ipcMain.on('start-python-script', async (event, args) => { // Mark the callback as async
     // Async function to load the pythonExecutable path from the configuration file
     const loadPythonExecutable = async () => {
@@ -441,8 +453,8 @@ function createMainWindow() {
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
-        // mainWindow.loadURL('http://localhost:3000');
-        mainWindow.loadURL('https://dev.memesrc.com/');
+        mainWindow.loadURL('http://localhost:3000');
+        // mainWindow.loadURL('https://dev.memesrc.com/');
     } else {
         mainWindow.loadURL('https://dev.memesrc.com/');
     }
