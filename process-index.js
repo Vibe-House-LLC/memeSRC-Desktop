@@ -1,6 +1,8 @@
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
+const ffmpeg = require('ffmpeg-static');
+const { exec } = require('child_process');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
 const subtitleExtensions = new Set(['.srt']);
@@ -67,6 +69,24 @@ async function appendToFile(filePath, content, headers) {
     }
 }
 
+// New function to split media files into 25-second segments at 10 fps
+async function splitMediaFileIntoSegments(filePath, id, season, episode) {
+    const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v fps=fps=10 -segment_time 00:00:25 -f segment -reset_timestamps 1 "${outputDir}/%d.mp4"`;
+
+    return new Promise((resolve, reject) => {
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return reject(error);
+            }
+            console.log(`stdout: ${stdout}`);
+            console.error(`stderr: ${stderr}`);
+            resolve();
+        });
+    });
+}
+
 // Helper function to convert timecode to frame index
 function timeToFrameIndex(time) {
   const [hours, minutes, seconds] = time.split(':');
@@ -129,6 +149,8 @@ async function processDirectoryInternal(directoryPath, id) {
                 if (fileType === 'subtitle') {
                     const captions = await parseSRT(fullPath);
                     await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                } else if (fileType === 'media') {
+                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
                 }
                 if (fileType) {
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
