@@ -28,17 +28,43 @@ async function parseSRT(filePath) {
 }
 
 async function writeCaptionsAsCSV(captions, season, episode, id) {
-  const csvFileName = `_docs.csv`;
-  const memesrcDir = await ensureMemesrcDir(id, `${season}`, `${episode}`); // Ensure directory with season and episode
-  const csvLines = captions.map(({ index, startTime, endTime, text }) => {
-      // Convert startTime and endTime to frame index (at 10 fps)
-      const startFrame = timeToFrameIndex(startTime);
-      const endFrame = timeToFrameIndex(endTime);
-      return `${season},${episode},${index},"${encodeBase64(text)}",${startFrame},${endFrame}`;
-  });
-  const csvContent = 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n' + csvLines.join('\n');
-  const finalOutputPath = path.join(memesrcDir, csvFileName); // Use the updated directory path
-  await fs.writeFile(finalOutputPath, csvContent, 'utf-8');
+    const csvFileName = `_docs.csv`;
+    // Ensure directory for the episode
+    const episodeDir = await ensureMemesrcDir(id, `${season}`, `${episode}`);
+    const seasonDir = await ensureMemesrcDir(id, `${season}`); // Ensure directory for the season
+    const seriesDir = await ensureMemesrcDir(id); // Ensure directory for the series
+    
+    const csvLines = captions.map(({ index, startTime, endTime, text }) => {
+        // Convert startTime and endTime to frame index (at 10 fps)
+        const startFrame = timeToFrameIndex(startTime);
+        const endFrame = timeToFrameIndex(endTime);
+        return `${season},${episode},${index},"${encodeBase64(text)}",${startFrame},${endFrame}`;
+    });
+
+    const csvContent = csvLines.join('\n') + '\n'; // Prepare CSV content to append
+
+    // Append to episode-specific CSV
+    const episodeCSVPath = path.join(episodeDir, csvFileName);
+    await appendToFile(episodeCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+
+    // Append to season-level CSV
+    const seasonCSVPath = path.join(seasonDir, csvFileName);
+    await appendToFile(seasonCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+
+    // Append to series-level CSV
+    const seriesCSVPath = path.join(seriesDir, csvFileName);
+    await appendToFile(seriesCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+}
+
+// Helper function to append content to a file, creating the file with headers if it does not exist
+async function appendToFile(filePath, content, headers) {
+    try {
+        await fs.access(filePath); // Check if file exists
+        await fs.appendFile(filePath, content, 'utf-8'); // Append if it exists
+    } catch (error) {
+        // If file does not exist, create it with headers
+        await fs.writeFile(filePath, headers + content, 'utf-8');
+    }
 }
 
 // Helper function to convert timecode to frame index
