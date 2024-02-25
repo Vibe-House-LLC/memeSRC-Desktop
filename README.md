@@ -9,8 +9,6 @@ Starter project for memeSRC Desktop on Windows & macOS
 ### 1. Install memeSRC Desktop
 
 ```bash
-git clone https://github.com/Vibe-House-LLC/memeSRC-Desktop.git
-cd memeSRC-Desktop
 npm install
 ```
 
@@ -29,5 +27,3 @@ npm run start-prod
 | macOS (arm64) | `npm run package-mac-arm` |
 | macOS (intel) | `npm run package-mac-intel` |
 | Windows (x64) | `npm run package-win` |
-
-Windows builds (unsigned) are currently available as [Action artifacts](https://github.com/Vibe-House-LLC/memeSRC-Desktop/actions).
