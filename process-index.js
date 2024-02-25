@@ -4,10 +4,11 @@ const os = require('os');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
 const subtitleExtensions = new Set(['.srt']);
-const memesrcDir = path.join(os.homedir(), '.memesrc');
 
-async function ensureMemesrcDir() {
+async function ensureMemesrcDir(id, season = '', episode = '') {
+    const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
     await fs.mkdir(memesrcDir, { recursive: true });
+    return memesrcDir; // Return the directory path for further use
 }
 
 async function parseSRT(filePath) {
@@ -21,11 +22,14 @@ async function parseSRT(filePath) {
     return captions;
 }
 
-async function writeCaptionsAsCSV(captions, outputPath) {
+async function writeCaptionsAsCSV(captions, season, episode, id) {
+    const csvFileName = `_docs.csv`;
+    const memesrcDir = await ensureMemesrcDir(id, `${season}`, `${episode}`); // Ensure directory with season and episode
     const csvLines = captions.map(({ startTime, endTime, text }) =>
         `"${startTime}","${endTime}","${text.replace(/"/g, '""')}"`);
     const csvContent = 'Start Time,End Time,Text\n' + csvLines.join('\n');
-    await fs.writeFile(outputPath, csvContent, 'utf-8');
+    const finalOutputPath = path.join(memesrcDir, csvFileName); // Use the updated directory path
+    await fs.writeFile(finalOutputPath, csvContent, 'utf-8');
 }
 
 async function extractSeasonEpisode(filename) {
@@ -53,15 +57,14 @@ function getFileType(filename) {
     return null;
 }
 
-async function processDirectoryInternal(directoryPath) {
-    await ensureMemesrcDir();
+async function processDirectoryInternal(directoryPath, id) {
     const entries = await fs.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
 
     for (let entry of entries) {
         const fullPath = path.join(directoryPath, entry.name);
         if (entry.isDirectory()) {
-            const subDirectorySeasonEpisodes = await processDirectoryInternal(fullPath);
+            const subDirectorySeasonEpisodes = await processDirectoryInternal(fullPath, id);
             seasonEpisodes.push(...subDirectorySeasonEpisodes);
         } else {
             const seasonEpisode = await extractSeasonEpisode(entry.name);
@@ -69,9 +72,8 @@ async function processDirectoryInternal(directoryPath) {
                 const fileType = getFileType(entry.name);
                 if (fileType === 'subtitle') {
                     const captions = await parseSRT(fullPath);
-                    const csvFileName = entry.name.replace(path.extname(entry.name), '.csv');
-                    const csvPath = path.join(memesrcDir, csvFileName);
-                    await writeCaptionsAsCSV(captions, csvPath);
+                    // Use the season and episode for naming and directory structuring
+                    await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
                 }
                 if (fileType) {
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
@@ -83,10 +85,10 @@ async function processDirectoryInternal(directoryPath) {
     return seasonEpisodes;
 }
 
-async function processDirectory(directoryPath) {
+async function processDirectory(directoryPath, id) {
     try {
-        const seasonEpisodes = await processDirectoryInternal(directoryPath);
-
+        console.log("ID: ", id);
+        const seasonEpisodes = await processDirectoryInternal(directoryPath, id);
         const seasonEpisodeSummary = seasonEpisodes.reduce((acc, { season, episode, type }) => {
             const key = `Season ${season}, Episode ${episode}`;
             if (!acc[key]) {
