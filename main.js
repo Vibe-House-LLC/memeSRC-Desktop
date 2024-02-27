@@ -230,9 +230,10 @@ ipcMain.handle('unpin-item', async (event, cid) => {
     }
 });
 
-ipcMain.handle('list-directory-contents', async (event, directory) => {
+ipcMain.handle('list-indexes', async (event) => {
     try {
         // Check if the directory exists first
+        const directory = '/memesrc/index'
         const exists = await directoryExists(directory);
         if (!exists) {
             console.log(`Directory ${directory} does not exist. Creating...`);
@@ -282,6 +283,7 @@ async function createDirectory(directory) {
 }
 
 async function listDirectoryContents(directory) {
+    console.log("LISTING DIRECTORY: ", directory)
     // List the contents of the directory
     return new Promise((resolve, reject) => {
         exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
@@ -422,7 +424,7 @@ ipcMain.handle("open-directory-dialog", async (event) => {
 
 function fetchItemDetails(directory, name) {
     return new Promise((resolve, reject) => {
-        exec(`${ipfsExecutable} files stat ${path.join(directory, name)}`, (error, stdout, stderr) => {
+        exec(`${ipfsExecutable} files stat ${directory}/${name}`, (error, stdout, stderr) => {
             if (error || stderr) {
                 console.error(`Error fetching details for ${name}:`, error || stderr);
                 reject(stderr || error);
