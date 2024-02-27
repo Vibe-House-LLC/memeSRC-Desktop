@@ -15,7 +15,7 @@ function encodeBase64(text) {
 async function ensureMemesrcDir(id, season = '', episode = '') {
     const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
     await fs.mkdir(memesrcDir, { recursive: true });
-    return memesrcDir; // Return the directory path for further use
+    return memesrcDir;
 }
 
 async function parseSRT(filePath) {
@@ -162,11 +162,64 @@ async function processDirectoryInternal(directoryPath, id) {
     return seasonEpisodes;
 }
 
+async function processMediaFiles(directoryPath, id, processedSubtitles) {
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    let seasonEpisodes = [];
+
+    for (let entry of entries) {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            const subDirectorySeasonEpisodes = await processMediaFiles(fullPath, id, processedSubtitles);
+            seasonEpisodes.push(...subDirectorySeasonEpisodes);
+        } else {
+            const fileType = getFileType(entry.name);
+            if (fileType === 'media') {
+                const seasonEpisode = await extractSeasonEpisode(entry.name);
+                if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
+                    // Your logic to process media files goes here
+                    // For example, splitting media files into segments
+                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
+                    seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
+                }
+            }
+        }
+    }
+
+    return seasonEpisodes;
+}
+
+async function processSubtitles(directoryPath, id) {
+    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    for (let entry of entries) {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            await processSubtitles(fullPath, id); // Recursive call for directories
+        } else {
+            const fileType = getFileType(entry.name);
+            if (fileType === 'subtitle') {
+                const seasonEpisode = await extractSeasonEpisode(entry.name);
+                if (seasonEpisode) {
+                    const captions = await parseSRT(fullPath);
+                    await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                }
+            }
+        }
+    }
+}
+
 async function processDirectory(directoryPath, id) {
     try {
         console.log("ID: ", id);
         await createMetadataFile(id); // Create metadata file
-        const seasonEpisodes = await processDirectoryInternal(directoryPath, id);
+        
+        // First, process all subtitles and collect their season-episode information
+        const processedSubtitles = new Set();
+        await processSubtitles(directoryPath, id, processedSubtitles);
+
+        // Now, process media files only after subtitles are processed
+        const seasonEpisodes = await processMediaFiles(directoryPath, id, processedSubtitles);
+
+        // Summarize the processing results
         const seasonEpisodeSummary = seasonEpisodes.reduce((acc, { season, episode, type }) => {
             const key = `Season ${season}, Episode ${episode}`;
             if (!acc[key]) {
@@ -183,7 +236,7 @@ async function processDirectory(directoryPath, id) {
 
         return seasonEpisodes;
     } catch (err) {
-        console.error('Error reading directory:', err);
+        console.error('Error processing directory:', err);
         throw err;
     }
 }
