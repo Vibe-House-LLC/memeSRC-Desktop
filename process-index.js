@@ -72,7 +72,7 @@ async function appendToFile(filePath, content, headers) {
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v fps=fps=10 -segment_time 00:00:25 -f segment -reset_timestamps 1 "${outputDir}/%d.mp4"`;
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v fps=fps=10 -segment_time 00:00:25 -f segment -c:v libx264 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
 
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
@@ -176,9 +176,13 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
             if (fileType === 'media') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
-                    // Your logic to process media files goes here
-                    // For example, splitting media files into segments
+
+                    // First, split media files into segments
                     await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
+
+                    // Then, extract clips based on subtitles
+                    await extractSubtitleClips(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
+                    
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
                 }
             }
@@ -187,6 +191,21 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
 
     return seasonEpisodes;
 }
+
+async function extractSubtitleClips(filePath, id, season, episode) {
+    const episodeDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
+    const csvFilePath = path.join(episodeDir, '_docs.csv');
+    try {
+        const captions = await readCaptionsFromCSV(csvFilePath);
+        for (const [index, caption] of captions.entries()) {
+            const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString(), 'clips');
+            await extractClipForSubtitle(filePath, caption.startFrame, caption.endFrame, outputDir, index);
+        }
+    } catch (error) {
+        console.error(`Error extracting subtitle clips: ${error}`);
+    }
+}
+
 
 async function processSubtitles(directoryPath, id) {
     const entries = await fs.readdir(directoryPath, { withFileTypes: true });
@@ -205,6 +224,51 @@ async function processSubtitles(directoryPath, id) {
             }
         }
     }
+}
+
+async function readCaptionsFromCSV(csvFilePath) {
+    const content = await fs.readFile(csvFilePath, 'utf-8');
+    const lines = content.split('\n').filter(line => line && !line.startsWith('season')); // Skip header and empty lines
+    const captions = lines.map(line => {
+        const [season, episode, subtitleIndex, encodedText, startFrame, endFrame] = line.split(',');
+        return {
+            season,
+            episode,
+            subtitleIndex,
+            text: Buffer.from(encodedText, 'base64').toString('utf-8'), // Decode base64 text
+            startFrame: parseInt(startFrame, 10),
+            endFrame: parseInt(endFrame, 10)
+        };
+    });
+    return captions;
+}
+
+function frameToTime(frame) {
+    const seconds = frame / 10;
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds - (hours * 3600)) / 60);
+    const secs = seconds - (hours * 3600) - (minutes * 60);
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toFixed(3).padStart(6, '0')}`;
+}
+
+async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir, clipIndex) {
+    const startTime = frameToTime(startFrame);
+    const endTime = frameToTime(endFrame);
+    const duration = (endFrame - startFrame) / 10;
+
+    const outputFile = path.join(outputDir, `s${clipIndex}.mp4`);
+    const command = `${ffmpeg} -i "${filePath}" -ss ${startTime} -t ${duration} -c:v libx264 "${outputFile}"`;
+    console.log("ABOUT TO RUN: ", command)
+
+    return new Promise((resolve, reject) => {
+        exec(command, (error, stdout, stderr) => {
+            if (error) {
+                console.error(`exec error: ${error}`);
+                return reject(error);
+            }
+            resolve(outputFile);
+        });
+    });
 }
 
 async function processDirectory(directoryPath, id) {
