@@ -290,7 +290,15 @@ async function listDirectoryContents(directory) {
                 reject(stderr || error);
             } else {
                 const itemNames = stdout.split('\n').filter(line => line.trim() !== '');
-                resolve(itemNames);
+                const itemsDetailsPromises = itemNames.map(name => fetchItemDetails(directory, name));
+                Promise.all(itemsDetailsPromises)
+                    .then(itemsDetails => {
+                        resolve(itemsDetails);
+                    })
+                    .catch(err => {
+                        console.error("Error fetching item details:", err);
+                        reject(err);
+                    });
             }
         });
     });
