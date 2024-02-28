@@ -42,7 +42,7 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
         // Convert startTime and endTime to frame index (at 10 fps)
         const startFrame = timeToFrameIndex(startTime);
         const endFrame = timeToFrameIndex(endTime);
-        return `${season},${episode},${index},"${encodeBase64(text)}",${startFrame},${endFrame}`;
+        return `${season},${episode},${index},${encodeBase64(text)},${startFrame},${endFrame}`;
     });
 
     const csvContent = csvLines.join('\n') + '\n'; // Prepare CSV content to append
