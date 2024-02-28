@@ -134,36 +134,6 @@ async function createMetadataFile(id) {
     await fsp.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
 }
 
-
-async function processDirectoryInternal(directoryPath, id) {
-    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
-    let seasonEpisodes = [];
-
-    for (let entry of entries) {
-        const fullPath = path.join(directoryPath, entry.name);
-        if (entry.isDirectory()) {
-            const subDirectorySeasonEpisodes = await processDirectoryInternal(fullPath, id);
-            seasonEpisodes.push(...subDirectorySeasonEpisodes);
-        } else {
-            const seasonEpisode = await extractSeasonEpisode(entry.name);
-            if (seasonEpisode) {
-                const fileType = getFileType(entry.name);
-                if (fileType === 'subtitle') {
-                    const captions = await parseSRT(fullPath);
-                    await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
-                } else if (fileType === 'media') {
-                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
-                }
-                if (fileType) {
-                    seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
-                }
-            }
-        }
-    }
-
-    return seasonEpisodes;
-}
-
 async function processMediaFiles(directoryPath, id, processedSubtitles) {
     const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
@@ -183,11 +153,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                     // Then, extract clips based on subtitles
                     await extractSubtitleClips(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
                     
-                    // After processing all media files, zip them
-                    // Assuming that the media files are saved in a specific directory structure,
-                    // you will need to call zipVideoClips for each relevant directory.
-                    // For demonstration, let's assume all clips are in a single directory per series,
-                    // you would adjust this according to your actual file structure.
+                    // Zip up the subitle-based thumbnail vids
                     const episodeDir = await ensureMemesrcDir(id, seasonEpisode.season.toString(), seasonEpisode.episode.toString());
                     await zipVideoClips(episodeDir); // Zip the video clips
 
@@ -208,9 +174,23 @@ async function extractSubtitleClips(filePath, id, season, episode) {
     const csvFilePath = path.join(episodeDir, '_docs.csv');
     try {
         const captions = await readCaptionsFromCSV(csvFilePath);
-        for (const [index, caption] of captions.entries()) {
-            const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString(), 'clips');
-            await extractClipForSubtitle(filePath, caption.startFrame, caption.endFrame, outputDir, index);
+        const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString(), 'clips');
+
+        // Process a single caption
+        async function processCaption(caption, globalIndex) {
+            // Corrected filename format here
+            await extractClipForSubtitle(filePath, caption.startFrame, caption.endFrame, outputDir, globalIndex);
+        }
+
+        // Process captions in batches
+        const promises = [];
+        for (let i = 0; i < captions.length; i++) {
+            promises.push(processCaption(captions[i], i));
+
+            if (promises.length === 5 || i === captions.length - 1) {
+                await Promise.all(promises);
+                promises.length = 0; // Clear the array for the next batch
+            }
         }
     } catch (error) {
         console.error(`Error extracting subtitle clips: ${error}`);
