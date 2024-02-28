@@ -1,7 +1,9 @@
-const fs = require('fs').promises;
+const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
 const os = require('os');
 const ffmpeg = require('ffmpeg-static');
+const archiver = require('archiver');
 const { exec } = require('child_process');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
@@ -14,12 +16,12 @@ function encodeBase64(text) {
 
 async function ensureMemesrcDir(id, season = '', episode = '') {
     const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
-    await fs.mkdir(memesrcDir, { recursive: true });
+    await fsp.mkdir(memesrcDir, { recursive: true });
     return memesrcDir;
 }
 
 async function parseSRT(filePath) {
-    const content = await fs.readFile(filePath, 'utf-8');
+    const content = await fsp.readFile(filePath, 'utf-8');
     const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map((caption, index) => {
         const [indexLine, time, ...textLines] = caption.split(/\r?\n/);
         const [startTime, endTime] = time.split(' --> ');
@@ -61,11 +63,11 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
 // Helper function to append content to a file, creating the file with headers if it does not exist
 async function appendToFile(filePath, content, headers) {
     try {
-        await fs.access(filePath); // Check if file exists
-        await fs.appendFile(filePath, content, 'utf-8'); // Append if it exists
+        await fsp.access(filePath); // Check if file exists
+        await fsp.appendFile(filePath, content, 'utf-8'); // Append if it exists
     } catch (error) {
         // If file does not exist, create it with headers
-        await fs.writeFile(filePath, headers + content, 'utf-8');
+        await fsp.writeFile(filePath, headers + content, 'utf-8');
     }
 }
 
@@ -128,13 +130,13 @@ async function createMetadataFile(id) {
         index_name: id,
         title: id
     };
-    await fs.mkdir(metadataDir, { recursive: true }); // Ensure the directory exists
-    await fs.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
+    await fsp.mkdir(metadataDir, { recursive: true }); // Ensure the directory exists
+    await fsp.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
 }
 
 
 async function processDirectoryInternal(directoryPath, id) {
-    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
 
     for (let entry of entries) {
@@ -163,7 +165,7 @@ async function processDirectoryInternal(directoryPath, id) {
 }
 
 async function processMediaFiles(directoryPath, id, processedSubtitles) {
-    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
 
     for (let entry of entries) {
@@ -177,12 +179,21 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
 
-                    // First, split media files into segments
-                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
 
                     // Then, extract clips based on subtitles
                     await extractSubtitleClips(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
                     
+                    // After processing all media files, zip them
+                    // Assuming that the media files are saved in a specific directory structure,
+                    // you will need to call zipVideoClips for each relevant directory.
+                    // For demonstration, let's assume all clips are in a single directory per series,
+                    // you would adjust this according to your actual file structure.
+                    const episodeDir = await ensureMemesrcDir(id, seasonEpisode.season.toString(), seasonEpisode.episode.toString());
+                    await zipVideoClips(episodeDir); // Zip the video clips
+
+                    // First, split media files into segments
+                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
+
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
                 }
             }
@@ -208,7 +219,7 @@ async function extractSubtitleClips(filePath, id, season, episode) {
 
 
 async function processSubtitles(directoryPath, id) {
-    const entries = await fs.readdir(directoryPath, { withFileTypes: true });
+    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     for (let entry of entries) {
         const fullPath = path.join(directoryPath, entry.name);
         if (entry.isDirectory()) {
@@ -227,7 +238,7 @@ async function processSubtitles(directoryPath, id) {
 }
 
 async function readCaptionsFromCSV(csvFilePath) {
-    const content = await fs.readFile(csvFilePath, 'utf-8');
+    const content = await fsp.readFile(csvFilePath, 'utf-8');
     const lines = content.split('\n').filter(line => line && !line.startsWith('season')); // Skip header and empty lines
     const captions = lines.map(line => {
         const [season, episode, subtitleIndex, encodedText, startFrame, endFrame] = line.split(',');
@@ -257,8 +268,8 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const duration = (endFrame - startFrame) / 10;
 
     const outputFile = path.join(outputDir, `s${clipIndex}.mp4`);
-    const command = `${ffmpeg} -i "${filePath}" -ss ${startTime} -t ${duration} -c:v libx264 "${outputFile}"`;
-    console.log("ABOUT TO RUN: ", command)
+    const command = `${ffmpeg} -i "${filePath}" -filter:v fps=fps=10 -ss ${startTime} -t ${duration} -c:v libx264 "${outputFile}"`;
+    // console.log("ABOUT TO RUN: ", command)
 
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
@@ -269,6 +280,58 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
             resolve(outputFile);
         });
     });
+}
+
+async function zipVideoClips(clipsDir) {
+    const files = await fsp.readdir(clipsDir);
+
+    // Group files by their index
+    const zipGroups = {};
+    files.forEach(file => {
+        console.log("Testing file for zipping: ", file)
+        if (file.endsWith(".mp4") && file.startsWith("s")) {
+            console.log("Passed the test for zipping: ", file)
+            const number = parseInt(file.substring(1, file.length - 4));
+            if (!isNaN(number)) {
+                const groupNumber = Math.floor(number / 15);
+                if (!zipGroups[groupNumber]) {
+                    zipGroups[groupNumber] = [];
+                }
+                zipGroups[groupNumber].push(file);
+            }
+        }
+    });
+
+    // Create a zip file for each group
+    for (const [groupNumber, filenames] of Object.entries(zipGroups)) {
+        const zipFilename = `${clipsDir}/s${groupNumber}.zip`;
+        const output = fs.createWriteStream(zipFilename);
+        const archive = archiver('zip', {
+            zlib: { level: 9 } // Sets the compression level.
+        });
+
+        output.on('close', function() {
+            console.log(archive.pointer() + ' total bytes');
+            console.log('Archiver has been finalized and the output file descriptor has closed.');
+        });
+
+        archive.on('error', function(err) {
+            throw err;
+        });
+
+        archive.pipe(output);
+
+        filenames.forEach(filename => {
+            archive.file(`${clipsDir}/${filename}`, { name: filename });
+        });
+
+        await archive.finalize();
+
+        // Optionally, delete the original mp4 files after zipping
+        await Promise.all(filenames.map(async filename => {
+            await fsp.unlink(`${clipsDir}/${filename}`);
+        }));
+    }
 }
 
 async function processDirectory(directoryPath, id) {

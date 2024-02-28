@@ -11,7 +11,7 @@
     "package-mac-arm": "npm run prepackage && electron-packager . --overwrite --platform=darwin --arch=arm64 --icon=icon.icns --prune=true --out=release-builds --extra-resource=pythonPath.json",
     "package-mac-intel": "npm run prepackage && electron-packager . --overwrite --platform=darwin --arch=x64 --icon=icon.icns --prune=true --out=release-builds --extra-resource=pythonPath.json",
     "package-win": "npm run prepackage && electron-packager . --overwrite --platform=win32 --arch=x64 --icon=icon.ico --prune=true --out=release-builds"
-  },  
+  },
   "author": "Vibe House LLC",
   "license": "MIT",
   "devDependencies": {
@@ -20,6 +20,7 @@
     "electron-packager": "^17.1.2"
   },
   "dependencies": {
+    "archiver": "^6.0.2",
     "electron-window-state": "^5.0.3",
     "ffmpeg-static": "^5.2.0",
     "kubo": "^0.26.0",
