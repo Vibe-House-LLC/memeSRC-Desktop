@@ -321,10 +321,50 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
 
 ipcMain.on('test-javascript-processing', async (event, args) => {
     const { inputPath, id } = args;
-    console.log("args: ", { inputPath, id });
+    console.log("Processing args: ", { inputPath, id });
     try {
+        // Process the directory
         const seasonEpisodes = await processDirectory(inputPath, id);
         event.reply('javascript-processing-result', { id, seasonEpisodes });
+
+        // Define the directory to add to IPFS
+        const processingDirectory = path.join(os.homedir(), '.memesrc', 'processing', id);
+
+        // Add the processed directory to IPFS
+        console.log(`Adding ${processingDirectory} to IPFS...`);
+        const addCommand = `add -r "${processingDirectory}"`;
+        exec(`${ipfsExecutable} ${addCommand}`, async (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error adding directory to IPFS: ${stderr}`);
+                event.reply('ipfs-add-error', { id, error: stderr });
+            } else {
+                // Parse the output to find the CID of the added directory
+                const lines = stdout.split('\n');
+                const lastLine = lines[lines.length - 2]; // Assuming the last line is empty, and the second last contains the CID
+                const match = lastLine.match(/added (\w+) .*/);
+                if (match && match[1]) {
+                    const cid = match[1];
+                    console.log(`Added directory to IPFS with CID: ${cid}`);
+                    event.reply('ipfs-add-result', { id, cid });
+
+                    // Now, copy the directory to /memesrc/index/{id} using the CID
+                    const cpCommand = `files cp /ipfs/${cid} /memesrc/index/${id}`;
+                    exec(`${ipfsExecutable} ${cpCommand}`, (cpError, cpStdout, cpStderr) => {
+                        if (cpError) {
+                            console.error(`Error copying directory in IPFS: ${cpStderr}`);
+                            event.reply('ipfs-cp-error', { id, error: cpStderr });
+                        } else {
+                            console.log(`Copied directory to /memesrc/index/${id} successfully`);
+                            // Optionally, you can send a success message back to the event emitter
+                            event.reply('ipfs-cp-success', { id, message: `Directory copied successfully to /memesrc/index/${id}` });
+                        }
+                    });
+                } else {
+                    console.error('Failed to parse CID from IPFS add output');
+                    event.reply('ipfs-add-parse-error', { id, error: 'Failed to parse CID from IPFS add output' });
+                }
+            }
+        });
     } catch (error) {
         console.error('Failed to process directory', error);
         event.reply('javascript-processing-error', { id, error: error.message });
