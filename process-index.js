@@ -74,8 +74,8 @@ async function appendToFile(filePath, content, headers) {
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v fps=fps=10 -segment_time 00:00:25 -f segment -c:v libx264 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
-
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "fps=fps=10,scale='min(iw,1280):min(ih,720)':force_original_aspect_ratio=decrease" -segment_time 00:00:25 -f segment -c:v libx264 -crf 31 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
+    console.log("COMMAND: ", command)
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
             if (error) {
@@ -149,6 +149,8 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
 
+                    // First, split media files into segments
+                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
 
                     // Then, extract clips based on subtitles
                     await extractSubtitleClips(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
@@ -156,9 +158,6 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                     // Zip up the subitle-based thumbnail vids
                     const episodeDir = await ensureMemesrcDir(id, seasonEpisode.season.toString(), seasonEpisode.episode.toString());
                     await zipVideoClips(episodeDir); // Zip the video clips
-
-                    // First, split media files into segments
-                    await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
 
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
                 }
@@ -248,7 +247,13 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const duration = (endFrame - startFrame) / 10;
 
     const outputFile = path.join(outputDir, `s${clipIndex}.mp4`);
-    const command = `${ffmpeg} -i "${filePath}" -filter:v fps=fps=10 -ss ${startTime} -t ${duration} -c:v libx264 "${outputFile}"`;
+    const scaleAndPad = `scale='min(iw*min(500/iw,500/ih),500)':'min(ih*min(500/iw,500/ih),500)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2`;
+    const fpsSetting = "fps=fps=10";
+    const crfValue = "-crf 35";
+    
+    // Assuming other variables (`ffmpeg`, `filePath`, `startTime`, `duration`, `outputFile`) are defined elsewhere in your code.
+    const command = `${ffmpeg} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -ss ${startTime} -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} "${outputFile}"`;
+    
     // console.log("ABOUT TO RUN: ", command)
 
     return new Promise((resolve, reject) => {
