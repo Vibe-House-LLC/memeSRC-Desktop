@@ -230,9 +230,10 @@ ipcMain.handle('unpin-item', async (event, cid) => {
     }
 });
 
-ipcMain.handle('list-directory-contents', async (event, directory) => {
+ipcMain.handle('list-indexes', async (event) => {
     try {
         // Check if the directory exists first
+        const directory = '/memesrc/index'
         const exists = await directoryExists(directory);
         if (!exists) {
             console.log(`Directory ${directory} does not exist. Creating...`);
@@ -282,6 +283,7 @@ async function createDirectory(directory) {
 }
 
 async function listDirectoryContents(directory) {
+    console.log("LISTING DIRECTORY: ", directory)
     // List the contents of the directory
     return new Promise((resolve, reject) => {
         exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
@@ -290,7 +292,15 @@ async function listDirectoryContents(directory) {
                 reject(stderr || error);
             } else {
                 const itemNames = stdout.split('\n').filter(line => line.trim() !== '');
-                resolve(itemNames);
+                const itemsDetailsPromises = itemNames.map(name => fetchItemDetails(directory, name));
+                Promise.all(itemsDetailsPromises)
+                    .then(itemsDetails => {
+                        resolve(itemsDetails);
+                    })
+                    .catch(err => {
+                        console.error("Error fetching item details:", err);
+                        reject(err);
+                    });
             }
         });
     });
@@ -310,66 +320,54 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
 });
 
 ipcMain.on('test-javascript-processing', async (event, args) => {
-    const { inputPath, id } = args;
-    console.log("args: ", { inputPath, id });
+    const { inputPath, id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "" } = args;
+    console.log("Processing args: ", { inputPath, id, title, description, frameCount, colorMain, colorSecondary, emoji });
     try {
-        const seasonEpisodes = await processDirectory(inputPath, id);
+        // Process the directory with the new metadata parameters
+        const seasonEpisodes = await processDirectory(inputPath, id, title, description, frameCount, colorMain, colorSecondary, emoji);
         event.reply('javascript-processing-result', { id, seasonEpisodes });
+
+        // Define the directory to add to IPFS
+        const processingDirectory = path.join(os.homedir(), '.memesrc', 'processing', id);
+
+        // Add the processed directory to IPFS
+        console.log(`Adding ${processingDirectory} to IPFS...`);
+        const addCommand = `add -r "${processingDirectory}"`;
+        exec(`${ipfsExecutable} ${addCommand}`, async (error, stdout, stderr) => {
+            if (error) {
+                console.error(`Error adding directory to IPFS: ${stderr}`);
+                event.reply('ipfs-add-error', { id, error: stderr });
+            } else {
+                // Parse the output to find the CID of the added directory
+                const lines = stdout.split('\n');
+                const lastLine = lines[lines.length - 2]; // Assuming the last line is empty, and the second last contains the CID
+                const match = lastLine.match(/added (\w+) .*/);
+                if (match && match[1]) {
+                    const cid = match[1];
+                    console.log(`Added directory to IPFS with CID: ${cid}`);
+                    event.reply('ipfs-add-result', { id, cid });
+
+                    // Now, copy the directory to /memesrc/index/{id} using the CID
+                    const cpCommand = `files cp /ipfs/${cid} /memesrc/index/${id}`;
+                    exec(`${ipfsExecutable} ${cpCommand}`, (cpError, cpStdout, cpStderr) => {
+                        if (cpError) {
+                            console.error(`Error copying directory in IPFS: ${cpStderr}`);
+                            event.reply('ipfs-cp-error', { id, error: cpStderr });
+                        } else {
+                            console.log(`Copied directory to /memesrc/index/${id} successfully`);
+                            // Optionally, you can send a success message back to the event emitter
+                            event.reply('ipfs-cp-success', { id, message: `Directory copied successfully to /memesrc/index/${id}` });
+                        }
+                    });
+                } else {
+                    console.error('Failed to parse CID from IPFS add output');
+                    event.reply('ipfs-add-parse-error', { id, error: 'Failed to parse CID from IPFS add output' });
+                }
+            }
+        });
     } catch (error) {
         console.error('Failed to process directory', error);
         event.reply('javascript-processing-error', { id, error: error.message });
-    }
-});
-
-ipcMain.on('start-python-script', async (event, args) => { // Mark the callback as async
-    // Async function to load the pythonExecutable path from the configuration file
-    const loadPythonExecutable = async () => {
-        try {
-            const configPath = path.join(process.resourcesPath, 'pythonPath.json');
-            const configData = await fs.readFile(configPath, 'utf-8'); // Use await to handle the promise
-            const config = JSON.parse(configData);
-            if (!config.pythonPath) {
-                throw new Error('pythonPath is not defined in the configuration.');
-            }
-            return config.pythonPath;
-        } catch (error) {
-            console.warn('Could not load Python path from configuration or file not found. Using default path. Error:', error);
-            // If the file can't be found or another error occurs, use 'python' as the default
-            return 'python'; // Return the default python path
-        }
-    };
-
-    try {
-        // Await the loading of the pythonExecutable path
-        const pythonExecutable = await loadPythonExecutable();
-
-        console.log("Python executable:", pythonExecutable);
-
-        // Proceed with the rest of the script only if pythonExecutable is successfully retrieved
-        const scriptPath = path.join(__dirname, 'process-index.py'); // Adjust script path as needed
-        const { inputPath, id } = args;
-
-        const ffmpegPath = require('ffmpeg-static');
-        console.log("FFmpeg path:", ffmpegPath);
-
-        // Construct the command to run the Python script with arguments
-        const command = `${pythonExecutable} "${scriptPath}" "${inputPath}" "${ffmpegPath}" "${id}"`;
-
-        // Execute the Python script
-        exec(command, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`Exec error: ${error}`);
-                event.sender.send('python-script-response', { success: false, error: stderr });
-                return;
-            }
-            console.log(`Stdout: ${stdout}`);
-            event.sender.send('python-script-response', { success: true, output: stdout });
-        });
-
-        event.sender.send('python-script-started', { started: true });
-    } catch (error) {
-        // Handle errors, such as file not found or pythonPath not defined
-        event.sender.send('python-script-response', { success: false, error: error.toString() });
     }
 });
 
@@ -414,7 +412,7 @@ ipcMain.handle("open-directory-dialog", async (event) => {
 
 function fetchItemDetails(directory, name) {
     return new Promise((resolve, reject) => {
-        exec(`${ipfsExecutable} files stat ${path.join(directory, name)}`, (error, stdout, stderr) => {
+        exec(`${ipfsExecutable} files stat ${directory}/${name}`, (error, stdout, stderr) => {
             if (error || stderr) {
                 console.error(`Error fetching details for ${name}:`, error || stderr);
                 reject(stderr || error);
