@@ -74,7 +74,11 @@ async function appendToFile(filePath, content, headers) {
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "fps=fps=10,scale='min(iw\\,1280):trunc(ow/a/2)*2':force_original_aspect_ratio=decrease" -segment_time 00:00:25 -f segment -c:v libx264 -crf 31 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
+    const scaleAndFps = `fps=fps=10,scale='min(iw\\,1280):trunc(ow/a/2)*2':force_original_aspect_ratio=decrease`;
+    const crfValue = "-crf 31";
+    const preset = "-preset fast";
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" -segment_time 00:00:25 -f segment -c:v libx264 ${crfValue} -reset_timestamps 1 ${preset} "${outputDir}/%d.mp4"`;
+    
     console.log("COMMAND: ", command)
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
@@ -253,9 +257,10 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const scaleAndPad = `scale='min(iw*min(500/iw,500/ih),500)':'min(ih*min(500/iw,500/ih),500)':force_original_aspect_ratio=decrease,pad=ceil(iw/2)*2:ceil(ih/2)*2`;
     const fpsSetting = "fps=fps=10";
     const crfValue = "-crf 35";
+    const preset = "-preset fast";
     
     // Assuming other variables (`ffmpeg`, `filePath`, `startTime`, `duration`, `outputFile`) are defined elsewhere in your code.
-    const command = `${ffmpeg} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -ss ${startTime} -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} "${outputFile}"`;
+    const command = `${ffmpeg} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -ss ${startTime} -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} "${outputFile}"`;    
     
     // console.log("ABOUT TO RUN: ", command)
 
