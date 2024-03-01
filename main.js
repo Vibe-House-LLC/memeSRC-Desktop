@@ -320,11 +320,11 @@ ipcMain.handle('add-cid-to-index', async (event, cid) => {
 });
 
 ipcMain.on('test-javascript-processing', async (event, args) => {
-    const { inputPath, id } = args;
-    console.log("Processing args: ", { inputPath, id });
+    const { inputPath, id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "" } = args;
+    console.log("Processing args: ", { inputPath, id, title, description, frameCount, colorMain, colorSecondary, emoji });
     try {
-        // Process the directory
-        const seasonEpisodes = await processDirectory(inputPath, id);
+        // Process the directory with the new metadata parameters
+        const seasonEpisodes = await processDirectory(inputPath, id, title, description, frameCount, colorMain, colorSecondary, emoji);
         event.reply('javascript-processing-result', { id, seasonEpisodes });
 
         // Define the directory to add to IPFS
