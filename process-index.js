@@ -74,7 +74,7 @@ async function appendToFile(filePath, content, headers) {
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "fps=fps=10,scale='min(iw,1280):min(ih,720)':force_original_aspect_ratio=decrease" -segment_time 00:00:25 -f segment -c:v libx264 -crf 31 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "fps=fps=10,scale='min(iw\\,1280):trunc(ow/a/2)*2':force_original_aspect_ratio=decrease" -segment_time 00:00:25 -f segment -c:v libx264 -crf 31 -reset_timestamps 1 "${outputDir}/%d.mp4"`;
     console.log("COMMAND: ", command)
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
@@ -122,13 +122,16 @@ function getFileType(filename) {
     return null;
 }
 
-async function createMetadataFile(id) {
+async function createMetadataFile(id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "") {
     const metadataDir = path.join(os.homedir(), '.memesrc', 'processing', id);
     const metadataPath = path.join(metadataDir, '00_metadata.json');
     const metadataContent = {
-        id: id,
-        index_name: id,
-        title: id
+        title: title,
+        description: description,
+        frameCount: frameCount,
+        colorMain: colorMain,
+        colorSecondary: colorSecondary,
+        emoji: emoji
     };
     await fsp.mkdir(metadataDir, { recursive: true }); // Ensure the directory exists
     await fsp.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
@@ -319,10 +322,10 @@ async function zipVideoClips(clipsDir) {
     }
 }
 
-async function processDirectory(directoryPath, id) {
+async function processDirectory(directoryPath, id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "") {
     try {
         console.log("ID: ", id);
-        await createMetadataFile(id); // Create metadata file
+        await createMetadataFile(id, title, description, frameCount, colorMain, colorSecondary, emoji); // Updated call
         
         // First, process all subtitles and collect their season-episode information
         const processedSubtitles = new Set();
