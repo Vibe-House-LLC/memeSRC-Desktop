@@ -193,7 +193,7 @@ async function extractSubtitleClips(filePath, id, season, episode) {
         for (let i = 0; i < captions.length; i++) {
             promises.push(processCaption(captions[i], i));
 
-            if (promises.length === 5 || i === captions.length - 1) {
+            if (promises.length === 3 || i === captions.length - 1) {
                 await Promise.all(promises);
                 promises.length = 0; // Clear the array for the next batch
             }
