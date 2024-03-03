@@ -38,12 +38,23 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
     const seasonDir = await ensureMemesrcDir(id, `${season}`); // Ensure directory for the season
     const seriesDir = await ensureMemesrcDir(id); // Ensure directory for the series
     
-    const csvLines = captions.map(({ index, startTime, endTime, text }) => {
-        // Convert startTime and endTime to frame index (at 10 fps)
+    // Filter out captions with blank startTime or endTime and map the rest
+    const csvLines = captions.filter(({ startTime, endTime }) => startTime && endTime).map(({ index, startTime, endTime, text }) => {
+        // Convert startTime and endTime to frame index (at 10 fps), assuming timeToFrameIndex handles invalid inputs gracefully
         const startFrame = timeToFrameIndex(startTime);
         const endFrame = timeToFrameIndex(endTime);
+        // Check if startFrame or endFrame is invalid (e.g., function returned NaN or undefined)
+        if (isNaN(startFrame) || isNaN(endFrame)) {
+            return null; // Exclude this caption
+        }
         return `${season},${episode},${index},${encodeBase64(text)},${startFrame},${endFrame}`;
-    });
+    }).filter(line => line !== null); // Remove null entries (captions that were excluded)
+
+    // Proceed only if there are valid csvLines to write
+    if (csvLines.length === 0) {
+        console.log("No valid captions to write.");
+        return; // Exit the function if no valid captions are available
+    }
 
     const csvContent = csvLines.join('\n') + '\n'; // Prepare CSV content to append
 
@@ -59,6 +70,7 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
     const seriesCSVPath = path.join(seriesDir, csvFileName);
     await appendToFile(seriesCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
 }
+
 
 // Helper function to append content to a file, creating the file with headers if it does not exist
 async function appendToFile(filePath, content, headers) {
