@@ -192,9 +192,8 @@ ipcMain.handle('fetch-metadata', (event, itemCid) => {
 });
 
 ipcMain.handle('fetch-processing-status', async (event, id) => {
-    const statusPath = path.join(os.homedir(), '.memesrc', 'processing', id, 'processing_status.json');
+    const statusPath = path.join(os.homedir(), '.memesrc', 'processing', id, 'status.json');
     try {
-        // Correctly using fs.promises.readFile with 'utf8' encoding
         const data = await fs.readFile(statusPath, 'utf8');
         const status = JSON.parse(data);
         return { success: true, status };
