@@ -167,6 +167,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
             if (fileType === 'media') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
+                    await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'indexing');
 
                     // First, split media files into segments
                     await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
@@ -179,6 +180,8 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                     await zipVideoClips(episodeDir); // Zip the video clips
 
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
+
+                    await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'done'); // Update status to 'done' once processing is complete
                 }
             }
         }
@@ -227,6 +230,8 @@ async function processSubtitles(directoryPath, id) {
             if (fileType === 'subtitle') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode) {
+                    // Update the status to 'indexing' here, where season and episode are known
+                    await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'pending');
                     const captions = await parseSRT(fullPath);
                     await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
                 }
@@ -337,6 +342,29 @@ async function zipVideoClips(clipsDir) {
             await fsp.unlink(`${clipsDir}/${filename}`);
         }));
     }
+}
+
+async function updateStatusFile(id, season, episode, status) {
+    const statusFilePath = path.join(os.homedir(), '.memesrc', 'processing', id, 'status.json');
+    let statusData = {};
+
+    try {
+        // Attempt to read the existing status file
+        const data = await fsp.readFile(statusFilePath, 'utf-8');
+        statusData = JSON.parse(data);
+    } catch (error) {
+        // If the file doesn't exist or there's an error, start with an empty object
+        console.log("Status file does not exist or cannot be read. It will be created.");
+    }
+
+    // Update the status for the specific season and episode
+    if (!statusData[season]) {
+        statusData[season] = {};
+    }
+    statusData[season][episode] = status;
+
+    // Write the updated status data back to the file
+    await fsp.writeFile(statusFilePath, JSON.stringify(statusData, null, 2), 'utf-8');
 }
 
 async function processDirectory(directoryPath, id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "") {
