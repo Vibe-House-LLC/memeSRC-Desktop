@@ -38,6 +38,14 @@ function ensureIpfsDaemonIsRunning() {
     });
 }
 
+function stopIpfsDaemon() {
+    if (ipfsDaemonProcess) {
+        console.log('Stopping IPFS daemon...');
+        ipfsDaemonProcess.kill('SIGINT'); // Use 'SIGINT' to allow for graceful shutdown
+        ipfsDaemonProcess = null;
+    }
+}
+
 function checkDaemonStatus() {
     return new Promise((resolve, reject) => {
         ipfs(`swarm peers`, (error, stdout, stderr) => {
@@ -476,6 +484,18 @@ function createMainWindow() {
     mainWindowState.manage(mainWindow);
 }
 
+app.on('window-all-closed', () => {
+    if (!isMac) {
+        app.quit();
+    }
+});
+
+app.on('before-quit', () => {
+    // Ensure the IPFS daemon is stopped before quitting the app
+    stopIpfsDaemon();
+});
+
+
 app.whenReady().then(() => {
     createMainWindow();
 
@@ -491,10 +511,3 @@ app.whenReady().then(() => {
         }
     });
 });
-
-app.on('window-all-closed', () => {
-    if (!isMac) {
-        app.quit();
-    }
-});
-
