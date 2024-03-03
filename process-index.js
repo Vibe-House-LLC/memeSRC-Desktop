@@ -208,7 +208,7 @@ async function extractSubtitleClips(filePath, id, season, episode) {
         for (let i = 0; i < captions.length; i++) {
             promises.push(processCaption(captions[i], i));
 
-            if (promises.length === 3 || i === captions.length - 1) {
+            if (promises.length === 1 || i === captions.length - 1) {
                 await Promise.all(promises);
                 promises.length = 0; // Clear the array for the next batch
             }
@@ -277,7 +277,7 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const preset = "-preset fast";
     
     // Assuming other variables (`ffmpeg`, `filePath`, `startTime`, `duration`, `outputFile`) are defined elsewhere in your code.
-    const command = `${ffmpeg} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -ss ${startTime} -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} "${outputFile}"`;    
+    const command = `${ffmpeg} -ss ${startTime} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} -an "${outputFile}"`;    
     
     // console.log("ABOUT TO RUN: ", command)
 
