@@ -23,6 +23,21 @@ function ipfs(commandString, callback) {
 
 let ipfsDaemonProcess = null;
 
+const IPFS_DAEMON_CHECK_INTERVAL = 10000; // Check every 10 seconds
+
+function ensureIpfsDaemonIsRunning() {
+    checkDaemonStatus().then((isRunning) => {
+        if (!isRunning) {
+            console.log("IPFS daemon is not running. Attempting to start...");
+            toggleIpfsDaemon();
+        } else {
+            console.log("IPFS daemon is running.");
+        }
+    }).catch((error) => {
+        console.error("Error checking IPFS daemon status:", error);
+    });
+}
+
 function checkDaemonStatus() {
     return new Promise((resolve, reject) => {
         ipfs(`swarm peers`, (error, stdout, stderr) => {
@@ -461,11 +476,14 @@ function createMainWindow() {
     mainWindowState.manage(mainWindow);
 }
 
-
-
-
 app.whenReady().then(() => {
     createMainWindow();
+
+    // Check the IPFS daemon status immediately on startup
+    ensureIpfsDaemonIsRunning();
+
+    // Then start the periodic check for the IPFS daemon's status
+    setInterval(ensureIpfsDaemonIsRunning, IPFS_DAEMON_CHECK_INTERVAL);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
