@@ -30,8 +30,6 @@ function ensureIpfsDaemonIsRunning() {
         if (!isRunning) {
             console.log("IPFS daemon is not running. Attempting to start...");
             toggleIpfsDaemon();
-        } else {
-            console.log("IPFS daemon is running.");
         }
     }).catch((error) => {
         console.error("Error checking IPFS daemon status:", error);
@@ -306,7 +304,6 @@ async function createDirectory(directory) {
 }
 
 async function listDirectoryContents(directory) {
-    console.log("LISTING DIRECTORY: ", directory)
     // List the contents of the directory
     return new Promise((resolve, reject) => {
         exec(`${ipfsExecutable} files ls ${directory}`, (error, stdout, stderr) => {
