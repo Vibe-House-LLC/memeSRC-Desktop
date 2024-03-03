@@ -167,6 +167,14 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
             if (fileType === 'media') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
+                    
+                    // Skip processing with ffmpeg if it's already 'done' status
+                    const status = await checkStatus(id, seasonEpisode.season, seasonEpisode.episode);
+                    if (status === 'done') {
+                        console.log(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - already processed.`);
+                        continue; // Skip to the next file
+                    }
+
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'indexing');
 
                     // First, split media files into segments
@@ -230,6 +238,12 @@ async function processSubtitles(directoryPath, id) {
             if (fileType === 'subtitle') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode) {
+                    // Skip processing subtitles if it's already 'done' status
+                    const status = await checkStatus(id, seasonEpisode.season, seasonEpisode.episode);
+                    if (status === 'done') {
+                        console.log(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - already processed.`);
+                        continue; // Skip to the next file
+                    }
                     // Update the status to 'indexing' here, where season and episode are known
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'pending');
                     const captions = await parseSRT(fullPath);
@@ -342,6 +356,21 @@ async function zipVideoClips(clipsDir) {
             await fsp.unlink(`${clipsDir}/${filename}`);
         }));
     }
+}
+
+// Function to check the processing status of an episode
+async function checkStatus(id, season, episode) {
+    const statusFilePath = path.join(os.homedir(), '.memesrc', 'processing', id, 'status.json');
+    try {
+        const data = await fsp.readFile(statusFilePath, 'utf-8');
+        const statusData = JSON.parse(data);
+        if (statusData[season] && statusData[season][episode]) {
+            return statusData[season][episode]; // Return the status ('pending', 'indexing', 'done')
+        }
+    } catch (error) {
+        console.log("Status file does not exist or cannot be read. Assuming 'pending'.");
+    }
+    return 'pending'; // Default to 'pending' if no status found
 }
 
 async function updateStatusFile(id, season, episode, status) {
