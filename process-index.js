@@ -246,8 +246,12 @@ async function processSubtitles(directoryPath, id) {
                     }
                     // Update the status to 'indexing' here, where season and episode are known
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'pending');
-                    const captions = await parseSRT(fullPath);
-                    await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                    try {
+                        const captions = await parseSRT(fullPath);
+                        await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                    } catch (e) {
+                        console.log(`WARNING: Skipped subtitle: ${fullPath}. Error: ${e}`)
+                    }
                 }
             }
         }
