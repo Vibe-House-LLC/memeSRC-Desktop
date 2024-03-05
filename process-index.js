@@ -89,8 +89,8 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const scaleAndFps = `fps=fps=10,scale='min(iw\\,1280):trunc(ow/a/2)*2':force_original_aspect_ratio=decrease`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" -segment_time 00:00:25 -f segment -c:v libx264 ${crfValue} -reset_timestamps 1 ${preset} "${outputDir}/%d.mp4"`;
-    
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -segment_time 25 -f segment "${outputDir}/%d.mp4"`;
+
     console.log("COMMAND: ", command)
     return new Promise((resolve, reject) => {
         exec(command, (error, stdout, stderr) => {
