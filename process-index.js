@@ -86,7 +86,7 @@ async function appendToFile(filePath, content, headers) {
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
-    const scaleAndFps = `fps=fps=10,scale='min(iw\\,1280):trunc(ow/a/2)*2':force_original_aspect_ratio=decrease`;
+    const scaleAndFps = `fps=10,scale='min(iw\\,1280):2*trunc((min(iw\\,1280)/iw*ih)/2)'`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
     const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment "${outputDir}/%d.mp4"`;
