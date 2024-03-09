@@ -94,7 +94,7 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const scaleAndFps = `fps=10,scale='min(iw\\,1280):2*trunc((min(iw\\,1280)/iw*ih)/2)'`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment "${outputDir}/%d.mp4"`;
+    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment -y "${outputDir}/%d.mp4"`;
 
     console.log("COMMAND: ", command)
     return new Promise((resolve, reject) => {
@@ -300,7 +300,7 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const preset = "-preset fast";
     
     // Assuming other variables (`ffmpeg`, `filePath`, `startTime`, `duration`, `outputFile`) are defined elsewhere in your code.
-    const command = `${ffmpeg} -ss ${startTime} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} -an "${outputFile}"`;    
+    const command = `${ffmpeg} -ss ${startTime} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} -an -y "${outputFile}"`;    
     
     // console.log("ABOUT TO RUN: ", command)
 
