@@ -1,5 +1,8 @@
+// main.js
+
 const os = require('os');
-const fs = require('fs').promises;
+const fsp = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { exec, spawn } = require('child_process');
@@ -172,6 +175,7 @@ ipcMain.handle('fetch-bandwidth-stats', async (event) => {
     }
 });
 
+
 ipcMain.handle('fetch-metadata', (event, itemCid) => {
     return new Promise((resolve, reject) => {
         exec(`${ipfsExecutable} cat ${itemCid}/00_metadata.json`, (error, stdout, stderr) => {
@@ -194,7 +198,7 @@ ipcMain.handle('fetch-metadata', (event, itemCid) => {
 ipcMain.handle('fetch-processing-status', async (event, id) => {
     const statusPath = path.join(os.homedir(), '.memesrc', 'processing', id, 'status.json');
     try {
-        const data = await fs.readFile(statusPath, 'utf8');
+        const data = await fsp.readFile(statusPath, 'utf8');
         const status = JSON.parse(data);
         return { success: true, status };
     } catch (error) {
@@ -272,6 +276,41 @@ ipcMain.handle('list-indexes', async (event) => {
         throw error; // Or return a custom error object/message
     }
 });
+
+
+ipcMain.handle('get-previous-jobs', async (event) => {
+    const processingDir = path.join(os.homedir(), '.memesrc', 'processing');
+    try {
+      const jobDirs = await fs.promises.readdir(processingDir);
+      const jobs = await Promise.all(jobDirs.map(async (jobDir) => {
+        const metadataPath = path.join(processingDir, jobDir, '00_metadata.json');
+        try {
+          await fs.promises.access(metadataPath);
+          const metadataJson = await fs.promises.readFile(metadataPath, 'utf8');
+          const metadata = JSON.parse(metadataJson);
+          return {
+            id: jobDir,
+            folderPath: path.join(processingDir, jobDir), // Construct the folderPath
+            title: metadata.title,
+            description: metadata.description,
+            frameCount: metadata.frameCount,
+            colorMain: metadata.colorMain,
+            colorSecondary: metadata.colorSecondary,
+            emoji: metadata.emoji,
+          };
+        } catch (error) {
+          return null;
+        }
+      }));
+      console.log("jobs:", jobs);
+      const filteredJobs = jobs.filter((job) => job !== null);
+      console.log("filderedJobs:", filteredJobs);
+      return filteredJobs;
+    } catch (error) {
+      console.error('Failed to retrieve previous jobs:', error);
+      return [];
+    }
+  });
 
 async function directoryExists(directory) {
     // Implement a check to see if the directory exists in IPFS

@@ -1,3 +1,5 @@
+// process-index.js
+
 const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
@@ -60,23 +62,26 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
 
     // Append to episode-specific CSV
     const episodeCSVPath = path.join(episodeDir, csvFileName);
-    await appendToFile(episodeCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+    await appendToFileWithoutDuplicates(episodeCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
 
     // Append to season-level CSV
     const seasonCSVPath = path.join(seasonDir, csvFileName);
-    await appendToFile(seasonCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+    await appendToFileWithoutDuplicates(seasonCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
 
     // Append to series-level CSV
     const seriesCSVPath = path.join(seriesDir, csvFileName);
-    await appendToFile(seriesCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
+    await appendToFileWithoutDuplicates(seriesCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
 }
 
-
-// Helper function to append content to a file, creating the file with headers if it does not exist
-async function appendToFile(filePath, content, headers) {
+// Helper function to append content to a file, creating the file with headers if it does not exist, and avoiding duplicates
+async function appendToFileWithoutDuplicates(filePath, content, headers) {
     try {
         await fsp.access(filePath); // Check if file exists
-        await fsp.appendFile(filePath, content, 'utf-8'); // Append if it exists
+        const existingContent = await fsp.readFile(filePath, 'utf-8'); // Read existing content
+        const existingLines = existingContent.split('\n').filter(line => line.trim() !== ''); // Split into lines and remove empty lines
+        const newLines = content.split('\n').filter(line => line.trim() !== ''); // Split new content into lines and remove empty lines
+        const uniqueLines = [...new Set([...existingLines, ...newLines])]; // Combine existing and new lines, removing duplicates
+        await fsp.writeFile(filePath, headers + uniqueLines.join('\n') + '\n', 'utf-8'); // Write the updated content back to the file
     } catch (error) {
         // If file does not exist, create it with headers
         await fsp.writeFile(filePath, headers + content, 'utf-8');
