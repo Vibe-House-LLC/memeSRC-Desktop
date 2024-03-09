@@ -277,12 +277,29 @@ ipcMain.handle('list-indexes', async (event) => {
     }
 });
 
-
-ipcMain.handle('get-previous-jobs', async (event) => {
-    const processingDir = path.join(os.homedir(), '.memesrc', 'processing');
+ipcMain.handle('save-job-folder-path', async (event, { id, folderPath }) => {
+    const jobsPath = path.join(os.homedir(), '.memesrc', 'jobs.json');
+    let jobs = {};
     try {
+      const jobsData = await fs.promises.readFile(jobsPath, 'utf8');
+      jobs = JSON.parse(jobsData);
+    } catch (error) {
+      // If the file doesn't exist or is invalid JSON, start with an empty object
+    }
+    jobs[id] = folderPath;
+    await fs.promises.writeFile(jobsPath, JSON.stringify(jobs, null, 2));
+  });
+
+  ipcMain.handle('get-previous-jobs', async (event) => {
+    const processingDir = path.join(os.homedir(), '.memesrc', 'processing');
+    const jobsPath = path.join(os.homedir(), '.memesrc', 'jobs.json');
+  
+    try {
+      const jobsData = await fs.promises.readFile(jobsPath, 'utf8');
+      const jobs = JSON.parse(jobsData);
+  
       const jobDirs = await fs.promises.readdir(processingDir);
-      const jobs = await Promise.all(jobDirs.map(async (jobDir) => {
+      const jobsWithMetadata = await Promise.all(jobDirs.map(async (jobDir) => {
         const metadataPath = path.join(processingDir, jobDir, '00_metadata.json');
         try {
           await fs.promises.access(metadataPath);
@@ -290,7 +307,7 @@ ipcMain.handle('get-previous-jobs', async (event) => {
           const metadata = JSON.parse(metadataJson);
           return {
             id: jobDir,
-            folderPath: path.join(processingDir, jobDir), // Construct the folderPath
+            folderPath: jobs[jobDir] || null, // Get the folderPath from jobs.json
             title: metadata.title,
             description: metadata.description,
             frameCount: metadata.frameCount,
@@ -302,15 +319,14 @@ ipcMain.handle('get-previous-jobs', async (event) => {
           return null;
         }
       }));
-      console.log("jobs:", jobs);
-      const filteredJobs = jobs.filter((job) => job !== null);
-      console.log("filderedJobs:", filteredJobs);
+  
+      const filteredJobs = jobsWithMetadata.filter((job) => job !== null);
       return filteredJobs;
     } catch (error) {
       console.error('Failed to retrieve previous jobs:', error);
       return [];
     }
-  });
+});
 
 async function directoryExists(directory) {
     // Implement a check to see if the directory exists in IPFS
