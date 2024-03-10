@@ -73,17 +73,31 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
     await appendToFileWithoutDuplicates(seriesCSVPath, csvContent, 'season,episode,subtitle_index,subtitle_text,start_frame,end_frame\n');
 }
 
-// Helper function to append content to a file, creating the file with headers if it does not exist, and avoiding duplicates
 async function appendToFileWithoutDuplicates(filePath, content, headers) {
     try {
-        await fsp.access(filePath); // Check if file exists
-        const existingContent = await fsp.readFile(filePath, 'utf-8'); // Read existing content
-        const existingLines = existingContent.split('\n').filter(line => line.trim() !== ''); // Split into lines and remove empty lines
-        const newLines = content.split('\n').filter(line => line.trim() !== ''); // Split new content into lines and remove empty lines
-        const uniqueLines = [...new Set([...existingLines, ...newLines])]; // Combine existing and new lines, removing duplicates
-        await fsp.writeFile(filePath, headers + uniqueLines.join('\n') + '\n', 'utf-8'); // Write the updated content back to the file
+        const fileExists = await fsp.access(filePath).then(() => true).catch(() => false);
+        let existingContent = '';
+
+        if (fileExists) {
+            existingContent = await fsp.readFile(filePath, 'utf-8');
+        }
+
+        const existingLines = existingContent.split('\n').filter(line => line.trim() !== '');
+        const newLines = content.split('\n').filter(line => line.trim() !== '');
+        const uniqueLines = [...new Set([...existingLines, ...newLines])];
+
+        let outputContent = '';
+
+        if (!fileExists || existingContent.trim() === '') {
+            // Write the header row only if the file doesn't exist or is empty
+            outputContent = headers;
+        }
+
+        outputContent += uniqueLines.join('\n') + '\n';
+
+        await fsp.writeFile(filePath, outputContent, 'utf-8');
     } catch (error) {
-        // If file does not exist, create it with headers
+        // If an error occurs, create the file with headers and content
         await fsp.writeFile(filePath, headers + content, 'utf-8');
     }
 }
