@@ -23,14 +23,24 @@ async function ensureMemesrcDir(id, season = '', episode = '') {
 }
 
 async function parseSRT(filePath) {
-    const content = await fsp.readFile(filePath, 'utf-8');
-    const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map((caption, index) => {
-        const [indexLine, time, ...textLines] = caption.split(/\r?\n/);
-        const [startTime, endTime] = time.split(' --> ');
-        const text = textLines.join(' ');
-        return { index, startTime, endTime, text };
-    });
-    return captions;
+    try {
+        const content = await fsp.readFile(filePath, 'utf-8');
+        const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map((caption, index) => {
+            const lines = caption.split(/\r?\n/);
+            if (lines.length < 2) {
+                console.warn(`Skipping invalid caption at index ${index} in file ${filePath}`);
+                return null;
+            }
+            const [indexLine, time, ...textLines] = lines;
+            const [startTime, endTime] = time.split(' --> ');
+            const text = textLines.join(' ');
+            return { index, startTime, endTime, text };
+        }).filter(Boolean);
+        return captions;
+    } catch (error) {
+        console.warn(`Error parsing SRT file ${filePath}: ${error.message}`);
+        return [];
+    }
 }
 
 async function writeCaptionsAsCSV(captions, season, episode, id) {
