@@ -24,6 +24,7 @@
     "ffmpeg-static": "^5.2.0",
     "kubo": "^0.26.0",
     "python-shell": "^5.0.0",
+    "sanitize-html": "^2.12.1",
     "subtitle": "^4.2.1"
   }
 }

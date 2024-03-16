@@ -8,6 +8,7 @@ const ffmpeg = require('ffmpeg-static');
 const archiver = require('archiver');
 const { exec } = require('child_process');
 const { parse, stringify } = require('subtitle')
+const sanitizeHtml = require('sanitize-html');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
 const subtitleExtensions = new Set(['.srt']);
@@ -30,11 +31,16 @@ async function parseSRT(filePath) {
             .pipe(parse())
             .on('data', node => {
                 if (node.type === 'cue') {
+                    const cleanedText = sanitizeHtml(node.data.text, {
+                        allowedTags: [], // Allow no HTML tags
+                        allowedAttributes: {}, // Allow no HTML attributes
+                    }).trim();
+                    
                     captions.push({
                         index: captions.length,
                         startTime: node.data.start,
                         endTime: node.data.end,
-                        text: node.data.text.trim()
+                        text: cleanedText
                     });
                 }
             })
