@@ -7,6 +7,7 @@ const os = require('os');
 const ffmpeg = require('ffmpeg-static');
 const archiver = require('archiver');
 const { exec } = require('child_process');
+const { parse, stringify } = require('subtitle')
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
 const subtitleExtensions = new Set(['.srt']);
@@ -23,24 +24,23 @@ async function ensureMemesrcDir(id, season = '', episode = '') {
 }
 
 async function parseSRT(filePath) {
-    try {
-        const content = await fsp.readFile(filePath, 'utf-8');
-        const captions = content.split(/\r?\n\r?\n/).filter(Boolean).map((caption, index) => {
-            const lines = caption.split(/\r?\n/);
-            if (lines.length < 2) {
-                console.warn(`Skipping invalid caption at index ${index} in file ${filePath}`);
-                return null;
-            }
-            const [indexLine, time, ...textLines] = lines;
-            const [startTime, endTime] = time.split(' --> ');
-            const text = textLines.join(' ');
-            return { index, startTime, endTime, text };
-        }).filter(Boolean);
-        return captions;
-    } catch (error) {
-        console.warn(`Error parsing SRT file ${filePath}: ${error.message}`);
-        return [];
-    }
+    return new Promise((resolve, reject) => {
+        const captions = [];
+        fs.createReadStream(filePath)
+            .pipe(parse())
+            .on('data', node => {
+                if (node.type === 'cue') {
+                    captions.push({
+                        index: captions.length,
+                        startTime: node.data.start,
+                        endTime: node.data.end,
+                        text: node.data.text.trim()
+                    });
+                }
+            })
+            .on('error', reject)
+            .on('finish', () => resolve(captions));
+    });
 }
 
 async function writeCaptionsAsCSV(captions, season, episode, id) {
@@ -52,15 +52,11 @@ async function writeCaptionsAsCSV(captions, season, episode, id) {
     
     // Filter out captions with blank startTime or endTime and map the rest
     const csvLines = captions.filter(({ startTime, endTime }) => startTime && endTime).map(({ index, startTime, endTime, text }) => {
-        // Convert startTime and endTime to frame index (at 10 fps), assuming timeToFrameIndex handles invalid inputs gracefully
+        // Convert startTime and endTime to frame index (at 10 fps)
         const startFrame = timeToFrameIndex(startTime);
         const endFrame = timeToFrameIndex(endTime);
-        // Check if startFrame or endFrame is invalid (e.g., function returned NaN or undefined)
-        if (isNaN(startFrame) || isNaN(endFrame)) {
-            return null; // Exclude this caption
-        }
         return `${season},${episode},${index},${encodeBase64(text)},${startFrame},${endFrame}`;
-    }).filter(line => line !== null); // Remove null entries (captions that were excluded)
+    });
 
     // Proceed only if there are valid csvLines to write
     if (csvLines.length === 0) {
@@ -135,11 +131,8 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
 }
 
 // Helper function to convert timecode to frame index
-function timeToFrameIndex(time) {
-  const [hours, minutes, seconds] = time.split(':');
-  const [sec, ms] = seconds.split(',');
-  const totalSeconds = parseInt(hours, 10) * 3600 + parseInt(minutes, 10) * 60 + parseInt(sec, 10) + parseInt(ms, 10) / 1000;
-  return Math.round(totalSeconds * 10); // Convert to frame index at 10 fps
+function timeToFrameIndex(milliseconds) {
+    return Math.round(milliseconds / 100); // Convert milliseconds to frame index at 10 fps
 }
 
 async function extractSeasonEpisode(filename) {
