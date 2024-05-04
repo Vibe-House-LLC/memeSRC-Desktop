@@ -20,7 +20,8 @@ async function indexCsv() {
 
   const csvPath = path.join(process.env.HOME, '.memesrc', 'processing', inputArg, '_docs.csv');
   const indexName = `v2-${inputArg}`;
-  const batchSize = 100; // Adjust the batch size as needed
+  const batchSize = 500;
+  const delayBetweenBatches = 1000; // Delay in milliseconds (e.g., 1000ms = 1 second)
 
   try {
     const rows = [];
@@ -58,6 +59,9 @@ async function indexCsv() {
       console.log("Bulk indexing response:", bulkResponse.body);
       processedCount += bulkBody.length / 2;
       console.log(`Processed ${processedCount} out of ${rows.length} rows`);
+
+      // Delay execution before processing the next batch
+      await new Promise((resolve) => setTimeout(resolve, delayBetweenBatches));
     }
 
     console.log('CSV indexing completed.');
