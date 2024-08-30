@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 
-const inputArg = process.argv[2]; // This assumes the input argument is the first after the script name
+const inputArg = process.argv[2];
 
 async function indexCsv() {
   const OPENSEARCH_ENDPOINT = "https://search-memesrc-3lcaiflaubqkqafuim5oyxupwa.us-east-1.es.amazonaws.com";
@@ -18,10 +18,12 @@ async function indexCsv() {
     },
   });
 
-  const csvPath = path.join(process.env.HOME, '.memesrc', 'processing', inputArg, '_docs.csv');
+  const csvPath = path.join('/Volumes/SSD_External_1TB/', inputArg, '_docs.csv');
   const indexName = `v2-${inputArg}`;
-  const batchSize = 500;
-  const delayBetweenBatches = 1000; // Delay in milliseconds (e.g., 1000ms = 1 second)
+  const batchSize = 750;
+  const delayBetweenBatches = 500; // Delay in milliseconds (e.g., 1000ms = 1 second)
+
+  console.log(csvPath)
 
   try {
     const rows = [];
@@ -65,8 +67,10 @@ async function indexCsv() {
     }
 
     console.log('CSV indexing completed.');
+    return true;
   } catch (error) {
     console.error('Error indexing CSV:', error);
+    return false;
   }
 }
 

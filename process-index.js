@@ -208,12 +208,12 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                     // First, split media files into segments
                     await splitMediaFileIntoSegments(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
 
-                    // Then, extract clips based on subtitles
+                    // Then, extract clips based on subtitles (now disabled)
                     await extractSubtitleClips(fullPath, id, seasonEpisode.season, seasonEpisode.episode);
                     
-                    // Zip up the subitle-based thumbnail vids
-                    const episodeDir = await ensureMemesrcDir(id, seasonEpisode.season.toString(), seasonEpisode.episode.toString());
-                    await zipVideoClips(episodeDir); // Zip the video clips
+                    // Commented out: Zip up the subitle-based thumbnail vids
+                    // const episodeDir = await ensureMemesrcDir(id, seasonEpisode.season.toString(), seasonEpisode.episode.toString());
+                    // await zipVideoClips(episodeDir); // Zip the video clips
 
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
 
@@ -231,12 +231,12 @@ async function extractSubtitleClips(filePath, id, season, episode) {
     const csvFilePath = path.join(episodeDir, '_docs.csv');
     try {
         const captions = await readCaptionsFromCSV(csvFilePath);
-        const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString(), 'clips');
+        // Commented out: const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString(), 'clips');
 
         // Process a single caption
         async function processCaption(caption, globalIndex) {
-            // Corrected filename format here
-            await extractClipForSubtitle(filePath, caption.startFrame, caption.endFrame, outputDir, globalIndex);
+            // Commented out: await extractClipForSubtitle(filePath, caption.startFrame, caption.endFrame, outputDir, globalIndex);
+            console.log(`Skipping clip extraction for caption ${globalIndex}`);
         }
 
         // Process captions in batches
