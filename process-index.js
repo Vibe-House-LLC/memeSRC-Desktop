@@ -10,7 +10,7 @@ const { exec } = require('child_process');
 const { parse, stringify } = require('subtitle')
 const sanitizeHtml = require('sanitize-html');
 
-const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov']);
+const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov', '.m4v']);
 const subtitleExtensions = new Set(['.srt']);
 
 // Encode text to base64
