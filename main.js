@@ -25,6 +25,7 @@ function ipfs(commandString, callback) {
 }
 
 let ipfsDaemonProcess = null;
+let mainWindow = null;
 
 const IPFS_DAEMON_CHECK_INTERVAL = 10000; // Check every 10 seconds
 
@@ -512,12 +513,15 @@ function createMainWindow() {
         defaultHeight: 800
     });
 
-    const mainWindow = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         title: 'memeSRC',
         x: mainWindowState.x,
         y: mainWindowState.y,
         width: mainWindowState.width,
         height: mainWindowState.height,
+        transparent: true,
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 20, y: 20 },
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
