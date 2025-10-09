@@ -13,6 +13,48 @@ const sanitizeHtml = require('sanitize-html');
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov', '.m4v']);
 const subtitleExtensions = new Set(['.srt']);
 
+const trackedChildProcesses = new Set();
+
+function trackChild(childProcess) {
+    if (!childProcess) {
+        return;
+    }
+    trackedChildProcesses.add(childProcess);
+    const cleanup = () => {
+        trackedChildProcesses.delete(childProcess);
+    };
+    childProcess.on('exit', cleanup);
+    childProcess.on('close', cleanup);
+    childProcess.on('error', cleanup);
+}
+
+function execWithTracking(command, options = {}) {
+    return new Promise((resolve, reject) => {
+        const child = exec(command, options, (error, stdout, stderr) => {
+            if (error) {
+                error.stdout = stdout;
+                error.stderr = stderr;
+                return reject(error);
+            }
+            resolve({ stdout, stderr });
+        });
+        trackChild(child);
+    });
+}
+
+function terminateProcessingChildren(signal = 'SIGTERM') {
+    trackedChildProcesses.forEach((child) => {
+        if (child.killed) {
+            return;
+        }
+        try {
+            child.kill(signal);
+        } catch (killError) {
+            console.warn(`Failed to send ${signal} to process ${child.pid}:`, killError);
+        }
+    });
+}
+
 // Encode text to base64
 function encodeBase64(text) {
     return Buffer.from(text, 'utf-8').toString('base64');
@@ -123,17 +165,13 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment -y "${outputDir}/%d.mp4"`;
 
     console.log("COMMAND: ", command)
-    return new Promise((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
-                return reject(error);
-            }
-            console.log(`stdout: ${stdout}`);
-            console.error(`stderr: ${stderr}`);
-            resolve();
-        });
-    });
+    const { stdout, stderr } = await execWithTracking(command);
+    if (stdout) {
+        console.log(`ffmpeg stdout: ${stdout}`);
+    }
+    if (stderr) {
+        console.error(`ffmpeg stderr: ${stderr}`);
+    }
 }
 
 // Helper function to convert timecode to frame index
@@ -327,15 +365,11 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     
     // console.log("ABOUT TO RUN: ", command)
 
-    return new Promise((resolve, reject) => {
-        exec(command, (error, stdout, stderr) => {
-            if (error) {
-                console.error(`exec error: ${error}`);
-                return reject(error);
-            }
-            resolve(outputFile);
-        });
-    });
+    const { stderr } = await execWithTracking(command);
+    if (stderr) {
+        console.error(`ffmpeg clip stderr: ${stderr}`);
+    }
+    return outputFile;
 }
 
 async function zipVideoClips(clipsDir) {
@@ -462,4 +496,4 @@ async function processDirectory(directoryPath, id, title = "", description = "",
     }
 }
 
-module.exports = { processDirectory };
+module.exports = { processDirectory, terminateProcessingChildren };

@@ -9,7 +9,7 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
-const { processDirectory } = require('./process-index');
+const { processDirectory, terminateProcessingChildren } = require('./process-index');
 
 const execAsync = promisify(exec);
 
@@ -548,6 +548,12 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
     // Ensure the IPFS daemon is stopped before quitting the app
     stopIpfsDaemon();
+    terminateProcessingChildren();
+});
+
+app.on('will-quit', () => {
+    // Forcefully terminate any lingering processing children
+    terminateProcessingChildren('SIGKILL');
 });
 
 
