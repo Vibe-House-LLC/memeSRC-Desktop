@@ -444,7 +444,14 @@ ipcMain.on('test-javascript-processing', async (event, args) => {
         });
     } catch (error) {
         console.error('Failed to process directory', error);
-        event.reply('javascript-processing-error', { id, error: error.message });
+        const sanitizedError = (error && typeof error === 'object') ? {
+            message: error.message,
+            stderr: error.stderr,
+            stdout: error.stdout,
+            command: error.cmd || error.command
+        } : { message: String(error) };
+        const displayMessage = sanitizedError.stderr?.trim() || sanitizedError.message || 'Processing failed';
+        event.reply('javascript-processing-error', { id, error: displayMessage, details: sanitizedError });
     }
 });
 
