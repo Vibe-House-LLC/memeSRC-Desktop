@@ -26,6 +26,8 @@ function ipfs(commandString, callback) {
 
 let ipfsDaemonProcess = null;
 let mainWindow = null;
+// Flag to differentiate user close vs app shutdown so we can hide on macOS
+let isQuitting = false;
 
 const IPFS_DAEMON_CHECK_INTERVAL = 10000; // Check every 10 seconds
 
@@ -522,10 +524,27 @@ function createMainWindow() {
         transparent: true,
         titleBarStyle: 'hiddenInset',
         trafficLightPosition: { x: 20, y: 20 },
+        show: false,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
         },
+    });
+
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+    });
+
+    mainWindow.on('close', (event) => {
+        if (isMac && !isQuitting) {
+            event.preventDefault();
+            mainWindow.hide();
+            return;
+        }
+    });
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
     });
 
     if (isDev) {
@@ -546,6 +565,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+    isQuitting = true;
     // Ensure the IPFS daemon is stopped before quitting the app
     stopIpfsDaemon();
     terminateProcessingChildren();
@@ -567,7 +587,12 @@ app.whenReady().then(() => {
     setInterval(ensureIpfsDaemonIsRunning, IPFS_DAEMON_CHECK_INTERVAL);
 
     app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) {
+                mainWindow.restore();
+            }
+            mainWindow.show();
+        } else if (BrowserWindow.getAllWindows().length === 0) {
             createMainWindow();
         }
     });
