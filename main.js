@@ -9,7 +9,7 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
-const { processDirectory } = require('./process-index');
+const { processDirectory, terminateProcessingChildren } = require('./process-index');
 
 const execAsync = promisify(exec);
 
@@ -25,6 +25,9 @@ function ipfs(commandString, callback) {
 }
 
 let ipfsDaemonProcess = null;
+let mainWindow = null;
+// Flag to differentiate user close vs app shutdown so we can hide on macOS
+let isQuitting = false;
 
 const IPFS_DAEMON_CHECK_INTERVAL = 10000; // Check every 10 seconds
 
@@ -512,16 +515,36 @@ function createMainWindow() {
         defaultHeight: 800
     });
 
-    const mainWindow = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         title: 'memeSRC',
         x: mainWindowState.x,
         y: mainWindowState.y,
         width: mainWindowState.width,
         height: mainWindowState.height,
+        transparent: true,
+        titleBarStyle: 'hiddenInset',
+        trafficLightPosition: { x: 20, y: 20 },
+        show: false,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false
         },
+    });
+
+    mainWindow.once('ready-to-show', () => {
+        mainWindow.show();
+    });
+
+    mainWindow.on('close', (event) => {
+        if (isMac && !isQuitting) {
+            event.preventDefault();
+            mainWindow.hide();
+            return;
+        }
+    });
+
+    mainWindow.on('closed', () => {
+        mainWindow = null;
     });
 
     if (isDev) {
@@ -542,8 +565,15 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+    isQuitting = true;
     // Ensure the IPFS daemon is stopped before quitting the app
     stopIpfsDaemon();
+    terminateProcessingChildren();
+});
+
+app.on('will-quit', () => {
+    // Forcefully terminate any lingering processing children
+    terminateProcessingChildren('SIGKILL');
 });
 
 
@@ -557,7 +587,12 @@ app.whenReady().then(() => {
     setInterval(ensureIpfsDaemonIsRunning, IPFS_DAEMON_CHECK_INTERVAL);
 
     app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) {
+                mainWindow.restore();
+            }
+            mainWindow.show();
+        } else if (BrowserWindow.getAllWindows().length === 0) {
             createMainWindow();
         }
     });
