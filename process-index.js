@@ -650,7 +650,7 @@ async function collectEpisodeKeys(directoryPath, episodeKeys = new Set()) {
 
         const seasonEpisode = await extractSeasonEpisode(entry.name);
         if (seasonEpisode) {
-            episodeKeys.add(`${seasonEpisode.season}:${seasonEpisode.episode}`);
+            episodeKeys.add(getEpisodeKey(seasonEpisode.season, seasonEpisode.episode));
         }
     }
     return episodeKeys;
@@ -677,7 +677,7 @@ async function seedStatusFile(id, directoryPath) {
     }
 
     episodeKeys.forEach((key) => {
-        const [seasonRaw, episodeRaw] = key.split(':');
+        const [seasonRaw, episodeRaw] = key.split('-');
         const season = parseInt(seasonRaw, 10);
         const episode = parseInt(episodeRaw, 10);
 
