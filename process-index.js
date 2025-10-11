@@ -13,7 +13,23 @@ const sanitizeHtml = require('sanitize-html');
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov', '.m4v']);
 const subtitleExtensions = new Set(['.srt']);
 
+let ffprobePath = 'ffprobe';
+try {
+    // Optional dependency; falls back to system ffprobe when not available
+    ffprobePath = require('ffprobe-static').path || ffprobePath;
+} catch (err) {
+    // Continue with default ffprobe path
+}
+
 const trackedChildProcesses = new Set();
+const MIN_SUBTITLE_FILE_SIZE = 100;
+
+function shellQuote(value) {
+    if (typeof value !== 'string') {
+        return value;
+    }
+    return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
 
 function trackChild(childProcess) {
     if (!childProcess) {
@@ -64,6 +80,168 @@ async function ensureMemesrcDir(id, season = '', episode = '') {
     const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
     await fsp.mkdir(memesrcDir, { recursive: true });
     return memesrcDir;
+}
+
+function getEpisodeKey(season, episode) {
+    return `${season}-${episode}`;
+}
+
+async function isValidSubtitleFile(filePath) {
+    try {
+        const stats = await fsp.stat(filePath);
+        return stats.size >= MIN_SUBTITLE_FILE_SIZE;
+    } catch (err) {
+        return false;
+    }
+}
+
+async function probeSubtitleStreams(filePath) {
+    const command = `${shellQuote(ffprobePath)} -v error -of json -show_streams ${shellQuote(filePath)}`;
+    try {
+        const { stdout } = await execWithTracking(command);
+        const result = stdout ? JSON.parse(stdout) : {};
+        return Array.isArray(result.streams) ? result.streams.filter(stream => stream.codec_type === 'subtitle') : [];
+    } catch (error) {
+        try {
+            if (error && error.stdout) {
+                const parsed = JSON.parse(error.stdout);
+                return Array.isArray(parsed.streams) ? parsed.streams.filter(stream => stream.codec_type === 'subtitle') : [];
+            }
+        } catch (parseError) {
+            // Ignore parse errors and fall through
+        }
+        console.warn(`Failed to probe subtitle streams for ${filePath}: ${error.stderr || error.message}`);
+        return [];
+    }
+}
+
+async function extractSubtitleTrack(filePath, streamIndex, outputPath, convertToSrt = true) {
+    const codecOption = convertToSrt ? '-c:s srt' : '-c:s copy';
+    const command = `${shellQuote(ffmpeg)} -y -i ${shellQuote(filePath)} -map 0:${streamIndex} ${codecOption} ${shellQuote(outputPath)}`;
+    try {
+        await execWithTracking(command);
+        return await isValidSubtitleFile(outputPath);
+    } catch (error) {
+        if (error.stderr) {
+            console.warn(`ffmpeg subtitle extract error: ${error.stderr}`);
+        }
+        return false;
+    }
+}
+
+async function convertAssToSrt(assPath, srtPath) {
+    const command = `${shellQuote(ffmpeg)} -y -i ${shellQuote(assPath)} -c:s srt ${shellQuote(srtPath)}`;
+    try {
+        await execWithTracking(command);
+        return await isValidSubtitleFile(srtPath);
+    } catch (error) {
+        if (error.stderr) {
+            console.warn(`ffmpeg ASS->SRT conversion error: ${error.stderr}`);
+        }
+        return false;
+    }
+}
+
+async function extractSubtitlesFromMedia(filePath, id, season, episode) {
+    const streams = await probeSubtitleStreams(filePath);
+    if (!streams.length) {
+        console.warn(`No subtitle streams detected for ${filePath}`);
+        return null;
+    }
+
+    const prioritizedStream = streams.find(stream => {
+        const language = (stream.tags && stream.tags.language) ? stream.tags.language.toLowerCase() : '';
+        return language === 'eng';
+    }) || streams[0];
+
+    const streamIndex = prioritizedStream.index;
+    const codecName = prioritizedStream.codec_name || '';
+
+    const episodeDir = await ensureMemesrcDir(id, `${season}`, `${episode}`);
+    const baseName = `${season}-${episode}`;
+    const srtPath = path.join(episodeDir, `${baseName}.srt`);
+    const assPath = path.join(episodeDir, `${baseName}.ass`);
+
+    const srtExtracted = await extractSubtitleTrack(filePath, streamIndex, srtPath, true);
+    if (srtExtracted) {
+        return srtPath;
+    }
+
+    if (codecName === 'ass') {
+        const assExtracted = await extractSubtitleTrack(filePath, streamIndex, assPath, false);
+        if (assExtracted) {
+            const converted = await convertAssToSrt(assPath, srtPath);
+            await fsp.unlink(assPath).catch(() => {});
+            if (converted) {
+                return srtPath;
+            }
+        }
+    }
+
+    console.warn(`Failed to extract usable subtitles for Season ${season}, Episode ${episode} from ${filePath}`);
+    return null;
+}
+
+async function captionsAlreadyProcessed(id, season, episode) {
+    const episodeDir = path.join(os.homedir(), '.memesrc', 'processing', id, `${season}`, `${episode}`);
+    const csvPath = path.join(episodeDir, '_docs.csv');
+    try {
+        const stats = await fsp.stat(csvPath);
+        return stats.size > 0;
+    } catch (err) {
+        return false;
+    }
+}
+
+async function ensureSubtitlesFromMedia(directoryPath, id, processedSubtitles) {
+    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            await ensureSubtitlesFromMedia(fullPath, id, processedSubtitles);
+            continue;
+        }
+
+        const fileType = getFileType(entry.name);
+        if (fileType !== 'media') {
+            continue;
+        }
+
+        const seasonEpisode = await extractSeasonEpisode(entry.name);
+        if (!seasonEpisode) {
+            continue;
+        }
+
+        const { season, episode } = seasonEpisode;
+        const episodeKey = getEpisodeKey(season, episode);
+
+        if (processedSubtitles.has(episodeKey)) {
+            continue;
+        }
+
+        if (await captionsAlreadyProcessed(id, season, episode)) {
+            processedSubtitles.add(episodeKey);
+            continue;
+        }
+
+        try {
+            const srtPath = await extractSubtitlesFromMedia(fullPath, id, season, episode);
+            if (!srtPath) {
+                continue;
+            }
+
+            const captions = await parseSRT(srtPath);
+            if (captions.length) {
+                await writeCaptionsAsCSV(captions, season, episode, id);
+                processedSubtitles.add(episodeKey);
+            } else {
+                console.warn(`No cues detected in extracted subtitles at ${srtPath}`);
+            }
+        } catch (error) {
+            console.warn(`Failed to parse extracted subtitles for ${fullPath}: ${error.message}`);
+        }
+    }
 }
 
 async function parseSRT(filePath) {
@@ -162,7 +340,9 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const scaleAndFps = `fps=10,scale='min(iw\\,1280):2*trunc((min(iw\\,1280)/iw*ih)/2)'`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
-    const command = `${ffmpeg} -i "${filePath}" -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment -y "${outputDir}/%d.mp4"`;
+    // Use forward slashes for ffmpeg compatibility across platforms
+    const segmentPattern = `${outputDir}/%d.mp4`.replace(/\\/g, '/');
+    const command = `${shellQuote(ffmpeg)} -i ${shellQuote(filePath)} -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment -y ${shellQuote(segmentPattern)}`;
 
     console.log("COMMAND: ", command)
     const { stdout, stderr } = await execWithTracking(command);
@@ -219,25 +399,35 @@ async function createMetadataFile(id, title = "", description = "", frameCount =
     await fsp.writeFile(metadataPath, JSON.stringify(metadataContent, null, 2), 'utf-8'); // Write the JSON file
 }
 
-async function processMediaFiles(directoryPath, id, processedSubtitles) {
+async function processMediaFiles(directoryPath, id, processedSubtitles, processedEpisodes = new Set()) {
     const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     let seasonEpisodes = [];
 
     for (let entry of entries) {
         const fullPath = path.join(directoryPath, entry.name);
         if (entry.isDirectory()) {
-            const subDirectorySeasonEpisodes = await processMediaFiles(fullPath, id, processedSubtitles);
+            const subDirectorySeasonEpisodes = await processMediaFiles(fullPath, id, processedSubtitles, processedEpisodes);
             seasonEpisodes.push(...subDirectorySeasonEpisodes);
         } else {
             const fileType = getFileType(entry.name);
             if (fileType === 'media') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
-                if (seasonEpisode && !processedSubtitles.has(`${seasonEpisode.season}-${seasonEpisode.episode}`)) {
+                if (seasonEpisode) {
+                    const episodeKey = getEpisodeKey(seasonEpisode.season, seasonEpisode.episode);
+                    if (processedEpisodes.has(episodeKey)) {
+                        continue;
+                    }
+
+                    if (!processedSubtitles.has(episodeKey)) {
+                        console.warn(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - subtitles not available.`);
+                        continue;
+                    }
                     
                     // Skip processing with ffmpeg if it's already 'done' status
                     const status = await checkStatus(id, seasonEpisode.season, seasonEpisode.episode);
                     if (status === 'done') {
                         console.log(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - already processed.`);
+                        processedEpisodes.add(episodeKey);
                         continue; // Skip to the next file
                     }
 
@@ -256,6 +446,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles) {
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
 
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'done'); // Update status to 'done' once processing is complete
+                    processedEpisodes.add(episodeKey);
                 }
             }
         }
@@ -293,17 +484,18 @@ async function extractSubtitleClips(filePath, id, season, episode) {
 }
 
 
-async function processSubtitles(directoryPath, id) {
+async function processSubtitles(directoryPath, id, processedSubtitles) {
     const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
     for (let entry of entries) {
         const fullPath = path.join(directoryPath, entry.name);
         if (entry.isDirectory()) {
-            await processSubtitles(fullPath, id); // Recursive call for directories
+            await processSubtitles(fullPath, id, processedSubtitles); // Recursive call for directories
         } else {
             const fileType = getFileType(entry.name);
             if (fileType === 'subtitle') {
                 const seasonEpisode = await extractSeasonEpisode(entry.name);
                 if (seasonEpisode) {
+                    const episodeKey = getEpisodeKey(seasonEpisode.season, seasonEpisode.episode);
                     // Skip processing subtitles if it's already 'done' status
                     const status = await checkStatus(id, seasonEpisode.season, seasonEpisode.episode);
                     if (status === 'done') {
@@ -314,7 +506,12 @@ async function processSubtitles(directoryPath, id) {
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'pending');
                     try {
                         const captions = await parseSRT(fullPath);
-                        await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                        if (captions.length) {
+                            await writeCaptionsAsCSV(captions, seasonEpisode.season, seasonEpisode.episode, id);
+                            processedSubtitles.add(episodeKey);
+                        } else {
+                            console.warn(`No cues found in subtitle file: ${fullPath}`);
+                        }
                     } catch (e) {
                         console.log(`WARNING: Skipped subtitle: ${fullPath}. Error: ${e}`)
                     }
@@ -361,7 +558,7 @@ async function extractClipForSubtitle(filePath, startFrame, endFrame, outputDir,
     const preset = "-preset fast";
     
     // Assuming other variables (`ffmpeg`, `filePath`, `startTime`, `duration`, `outputFile`) are defined elsewhere in your code.
-    const command = `${ffmpeg} -ss ${startTime} -i "${filePath}" -filter:v "${fpsSetting},${scaleAndPad}" -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} -an -y "${outputFile}"`;    
+    const command = `${shellQuote(ffmpeg)} -ss ${startTime} -i ${shellQuote(filePath)} -filter:v "${fpsSetting},${scaleAndPad}" -t ${duration} -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p ${crfValue} ${preset} -an -y ${shellQuote(outputFile)}`;    
     
     // console.log("ABOUT TO RUN: ", command)
 
@@ -439,6 +636,67 @@ async function checkStatus(id, season, episode) {
     return 'pending'; // Default to 'pending' if no status found
 }
 
+async function collectEpisodeKeys(directoryPath, episodeKeys = new Set()) {
+    const entries = await fsp.readdir(directoryPath, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(directoryPath, entry.name);
+        if (entry.isDirectory()) {
+            await collectEpisodeKeys(fullPath, episodeKeys);
+            continue;
+        }
+
+        if (!getFileType(entry.name)) {
+            continue;
+        }
+
+        const seasonEpisode = await extractSeasonEpisode(entry.name);
+        if (seasonEpisode) {
+            episodeKeys.add(getEpisodeKey(seasonEpisode.season, seasonEpisode.episode));
+        }
+    }
+    return episodeKeys;
+}
+
+async function seedStatusFile(id, directoryPath) {
+    const episodeKeys = await collectEpisodeKeys(directoryPath);
+    if (!episodeKeys.size) {
+        return;
+    }
+
+    const statusDir = path.join(os.homedir(), '.memesrc', 'processing', id);
+    await fsp.mkdir(statusDir, { recursive: true });
+    const statusFilePath = path.join(statusDir, 'status.json');
+
+    let statusData = {};
+    let writeNeeded = false;
+
+    try {
+        const data = await fsp.readFile(statusFilePath, 'utf-8');
+        statusData = JSON.parse(data);
+    } catch {
+        writeNeeded = true;
+    }
+
+    episodeKeys.forEach((key) => {
+        const [seasonRaw, episodeRaw] = key.split('-');
+        const season = parseInt(seasonRaw, 10);
+        const episode = parseInt(episodeRaw, 10);
+
+        if (!statusData[season]) {
+            statusData[season] = {};
+        }
+
+        if (!statusData[season][episode]) {
+            statusData[season][episode] = 'pending';
+            writeNeeded = true;
+        }
+    });
+
+    if (writeNeeded) {
+        await fsp.writeFile(statusFilePath, JSON.stringify(statusData, null, 2), 'utf-8');
+    }
+}
+
 async function updateStatusFile(id, season, episode, status) {
     const statusFilePath = path.join(os.homedir(), '.memesrc', 'processing', id, 'status.json');
     let statusData = {};
@@ -466,10 +724,14 @@ async function processDirectory(directoryPath, id, title = "", description = "",
     try {
         console.log("ID: ", id);
         await createMetadataFile(id, title, description, frameCount, colorMain, colorSecondary, emoji); // Updated call
+        await seedStatusFile(id, directoryPath);
         
         // First, process all subtitles and collect their season-episode information
         const processedSubtitles = new Set();
         await processSubtitles(directoryPath, id, processedSubtitles);
+
+        // Attempt to extract subtitles directly from media if standalone files were not found
+        await ensureSubtitlesFromMedia(directoryPath, id, processedSubtitles);
 
         // Now, process media files only after subtitles are processed
         const seasonEpisodes = await processMediaFiles(directoryPath, id, processedSubtitles);
