@@ -417,8 +417,6 @@ async function processMediaFiles(directoryPath, id, processedSubtitles, processe
                         continue;
                     }
 
-                    processedEpisodes.add(episodeKey);
-
                     if (!processedSubtitles.has(episodeKey)) {
                         console.warn(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - subtitles not available.`);
                         continue;
@@ -428,6 +426,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles, processe
                     const status = await checkStatus(id, seasonEpisode.season, seasonEpisode.episode);
                     if (status === 'done') {
                         console.log(`Skipping Season ${seasonEpisode.season}, Episode ${seasonEpisode.episode} - already processed.`);
+                        processedEpisodes.add(episodeKey);
                         continue; // Skip to the next file
                     }
 
@@ -446,6 +445,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles, processe
                     seasonEpisodes.push({ ...seasonEpisode, type: fileType, path: fullPath });
 
                     await updateStatusFile(id, seasonEpisode.season, seasonEpisode.episode, 'done'); // Update status to 'done' once processing is complete
+                    processedEpisodes.add(episodeKey);
                 }
             }
         }
