@@ -340,7 +340,8 @@ async function splitMediaFileIntoSegments(filePath, id, season, episode) {
     const scaleAndFps = `fps=10,scale='min(iw\\,1280):2*trunc((min(iw\\,1280)/iw*ih)/2)'`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
-    const segmentPattern = path.join(outputDir, '%d.mp4');
+    // Use forward slashes for ffmpeg compatibility across platforms
+    const segmentPattern = `${outputDir}/%d.mp4`.replace(/\\/g, '/');
     const command = `${shellQuote(ffmpeg)} -i ${shellQuote(filePath)} -an -filter:v "${scaleAndFps}" ${crfValue} ${preset} -reset_timestamps 1 -sc_threshold 0 -g 5 -force_key_frames "expr:gte(t, n_forced * 5)" -profile:v high -pix_fmt yuv420p -segment_time 25 -f segment -y ${shellQuote(segmentPattern)}`;
 
     console.log("COMMAND: ", command)
