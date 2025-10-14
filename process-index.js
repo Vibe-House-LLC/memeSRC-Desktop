@@ -22,6 +22,8 @@ try {
 }
 
 const trackedChildProcesses = new Set();
+const jobProcessMap = new Map(); // Map of job IDs to Sets of child processes
+let currentJobId = null; // Track which job is currently being processed
 const MIN_SUBTITLE_FILE_SIZE = 100;
 
 function shellQuote(value) {
@@ -36,8 +38,21 @@ function trackChild(childProcess) {
         return;
     }
     trackedChildProcesses.add(childProcess);
+    
+    // If we're currently processing a job, track this process for that job
+    if (currentJobId) {
+        if (!jobProcessMap.has(currentJobId)) {
+            jobProcessMap.set(currentJobId, new Set());
+        }
+        jobProcessMap.get(currentJobId).add(childProcess);
+    }
+    
     const cleanup = () => {
         trackedChildProcesses.delete(childProcess);
+        // Also remove from job-specific tracking
+        if (currentJobId && jobProcessMap.has(currentJobId)) {
+            jobProcessMap.get(currentJobId).delete(childProcess);
+        }
     };
     childProcess.on('exit', cleanup);
     childProcess.on('close', cleanup);
@@ -69,6 +84,42 @@ function terminateProcessingChildren(signal = 'SIGTERM') {
             console.warn(`Failed to send ${signal} to process ${child.pid}:`, killError);
         }
     });
+}
+
+function cancelProcessingJob(jobId, signal = 'SIGTERM') {
+    console.log(`Cancelling processing job: ${jobId}`);
+    
+    if (!jobProcessMap.has(jobId)) {
+        console.log(`No active processes found for job ID: ${jobId}`);
+        return { success: true, message: `No active processes found for job ${jobId}` };
+    }
+    
+    const processes = jobProcessMap.get(jobId);
+    let killedCount = 0;
+    
+    processes.forEach((child) => {
+        if (child.killed) {
+            return;
+        }
+        try {
+            child.kill(signal);
+            killedCount++;
+            console.log(`Killed process ${child.pid} for job ${jobId}`);
+        } catch (killError) {
+            console.warn(`Failed to send ${signal} to process ${child.pid}:`, killError);
+        }
+    });
+    
+    // Clean up the job from the map
+    jobProcessMap.delete(jobId);
+    
+    // Clear current job ID if it matches
+    if (currentJobId === jobId) {
+        currentJobId = null;
+    }
+    
+    console.log(`Cancelled ${killedCount} processes for job ${jobId}`);
+    return { success: true, message: `Cancelled ${killedCount} processes`, killedCount };
 }
 
 // Encode text to base64
@@ -723,6 +774,11 @@ async function updateStatusFile(id, season, episode, status) {
 async function processDirectory(directoryPath, id, title = "", description = "", frameCount = 10, colorMain = "", colorSecondary = "", emoji = "") {
     try {
         console.log("ID: ", id);
+        
+        // Set the current job ID for process tracking
+        currentJobId = id;
+        console.log(`Started processing job: ${id}`);
+        
         await createMetadataFile(id, title, description, frameCount, colorMain, colorSecondary, emoji); // Updated call
         await seedStatusFile(id, directoryPath);
         
@@ -755,7 +811,17 @@ async function processDirectory(directoryPath, id, title = "", description = "",
     } catch (err) {
         console.error('Error processing directory:', err);
         throw err;
+    } finally {
+        // Clean up job tracking when done (success or error)
+        if (currentJobId === id) {
+            currentJobId = null;
+            console.log(`Finished processing job: ${id}`);
+        }
+        // Clean up any remaining tracked processes for this job
+        if (jobProcessMap.has(id)) {
+            jobProcessMap.delete(id);
+        }
     }
 }
 
-module.exports = { processDirectory, terminateProcessingChildren };
+module.exports = { processDirectory, terminateProcessingChildren, cancelProcessingJob };

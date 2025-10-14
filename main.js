@@ -9,7 +9,7 @@ const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
 const { promisify } = require('util');
 const { PythonShell } = require('python-shell');
-const { processDirectory, terminateProcessingChildren } = require('./process-index');
+const { processDirectory, terminateProcessingChildren, cancelProcessingJob } = require('./process-index');
 
 const execAsync = promisify(exec);
 
@@ -207,6 +207,21 @@ ipcMain.handle('fetch-processing-status', async (event, id) => {
     } catch (error) {
         console.error(`Failed to fetch processing status for ID ${id}:`, error);
         return { success: false, message: `Error fetching processing status for ID ${id}: ${error.message}` };
+    }
+});
+
+ipcMain.on('cancel-processing-job', (event, { id }) => {
+    console.log('Received cancel request for processing job:', id);
+    
+    try {
+        const result = cancelProcessingJob(id);
+        console.log(`Successfully cancelled processing job ${id}:`, result);
+        
+        // Notify the renderer process about successful cancellation
+        event.reply('processing-job-cancelled', { id, success: true, ...result });
+    } catch (error) {
+        console.error(`Error cancelling processing job ${id}:`, error);
+        event.reply('processing-job-cancelled', { id, success: false, error: error.message });
     }
 });
 
