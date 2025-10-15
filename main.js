@@ -572,9 +572,9 @@ function createMainWindow() {
     if (isDev) {
         mainWindow.webContents.openDevTools();
         mainWindow.loadURL('http://localhost:3000');
-        // mainWindow.loadURL('https://dev.memesrc.com/');
+        // mainWindow.loadURL('https://memesrc.com/');
     } else {
-        mainWindow.loadURL('https://dev.memesrc.com/');
+        mainWindow.loadURL('https://memesrc.com/');
     }
 
     mainWindowState.manage(mainWindow);
