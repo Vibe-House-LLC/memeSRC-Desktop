@@ -7,7 +7,7 @@ const path = require('path');
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { exec, spawn } = require('child_process');
 const windowStateKeeper = require('electron-window-state');
-const { promisify } = require('util');
+const { promisify, format } = require('util');
 const { PythonShell } = require('python-shell');
 const { processDirectory, terminateProcessingChildren, cancelProcessingJob } = require('./process-index');
 
@@ -17,6 +17,88 @@ const isDev = process.env.NODE_ENV === 'dev';
 const isMac = process.platform === 'darwin';
 
 const ipfsExecutable = path.join(__dirname, 'node_modules', 'kubo', 'bin', 'ipfs');
+
+const logDirectory = path.join(os.homedir(), '.memesrc', 'logs');
+const originalConsole = {
+    log: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error,
+    debug: console.debug,
+};
+
+fs.mkdirSync(logDirectory, { recursive: true });
+
+function getDateStamp(date) {
+    return date.toISOString().slice(0, 10);
+}
+
+function createLogStream(dateStamp) {
+    const filePath = path.join(logDirectory, `${dateStamp}.log`);
+    const stream = fs.createWriteStream(filePath, { flags: 'a' });
+    stream.on('error', (streamError) => {
+        originalConsole.error('Log stream error:', streamError);
+    });
+    return stream;
+}
+
+let currentLogDate = getDateStamp(new Date());
+let logStream = createLogStream(currentLogDate);
+
+function rotateLogStreamIfNeeded(now) {
+    const dateStamp = getDateStamp(now);
+    if (dateStamp !== currentLogDate) {
+        logStream.end();
+        currentLogDate = dateStamp;
+        logStream = createLogStream(currentLogDate);
+    }
+}
+
+function writeLogEntry(level, args) {
+    const now = new Date();
+    if (!logStream) {
+        currentLogDate = getDateStamp(now);
+        logStream = createLogStream(currentLogDate);
+    }
+    rotateLogStreamIfNeeded(now);
+    const message = format(...args);
+    logStream.write(`[${now.toISOString()}] [${level.toUpperCase()}] ${message}\n`);
+}
+
+['log', 'info', 'warn', 'error', 'debug'].forEach((level) => {
+    console[level] = (...args) => {
+        try {
+            writeLogEntry(level, args);
+        } catch (loggingError) {
+            originalConsole.error('Failed to write log entry:', loggingError);
+        }
+        const original = originalConsole[level] || originalConsole.log;
+        original.apply(console, args);
+    };
+});
+
+const cleanupLogStream = () => {
+    if (logStream) {
+        logStream.end();
+        logStream = null;
+    }
+};
+
+process.on('exit', cleanupLogStream);
+process.on('SIGINT', () => {
+    cleanupLogStream();
+    process.exit(0);
+});
+process.on('SIGTERM', () => {
+    cleanupLogStream();
+    process.exit(0);
+});
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('Unhandled rejection:', reason);
+});
 
 // IPFS functions
 
@@ -571,7 +653,7 @@ function createMainWindow() {
 
     if (isDev) {
         mainWindow.webContents.openDevTools();
-        mainWindow.loadURL('http://localhost:3000');
+        mainWindow.loadURL('http://memesrc.com');
         // mainWindow.loadURL('https://memesrc.com/');
     } else {
         mainWindow.loadURL('https://memesrc.com/');
@@ -596,6 +678,7 @@ app.on('before-quit', () => {
 app.on('will-quit', () => {
     // Forcefully terminate any lingering processing children
     terminateProcessingChildren('SIGKILL');
+    cleanupLogStream();
 });
 
 
