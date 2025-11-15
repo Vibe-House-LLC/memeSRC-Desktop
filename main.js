@@ -10,6 +10,7 @@ const windowStateKeeper = require('electron-window-state');
 const { promisify, format } = require('util');
 const { PythonShell } = require('python-shell');
 const { processDirectory, terminateProcessingChildren, cancelProcessingJob } = require('./process-index');
+const { compareSeasonEpisodeTuples } = require('./episode-utils');
 
 const execAsync = promisify(exec);
 
@@ -285,7 +286,23 @@ ipcMain.handle('fetch-processing-status', async (event, id) => {
     try {
         const data = await fsp.readFile(statusPath, 'utf8');
         const status = JSON.parse(data);
-        return { success: true, status };
+        const orderedEpisodes = Object.entries(status).reduce((acc, [seasonKey, episodes]) => {
+            const seasonNumber = parseInt(seasonKey, 10);
+            if (Number.isNaN(seasonNumber) || !episodes || typeof episodes !== 'object') {
+                return acc;
+            }
+
+            Object.entries(episodes).forEach(([episodeId, episodeStatus]) => {
+                acc.push({
+                    season: seasonNumber,
+                    episode: `${episodeId}`,
+                    status: episodeStatus
+                });
+            });
+            return acc;
+        }, []).sort(compareSeasonEpisodeTuples);
+
+        return { success: true, status, orderedEpisodes };
     } catch (error) {
         console.error(`Failed to fetch processing status for ID ${id}:`, error);
         return { success: false, message: `Error fetching processing status for ID ${id}: ${error.message}` };
