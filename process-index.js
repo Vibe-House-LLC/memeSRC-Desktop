@@ -9,7 +9,7 @@ const archiver = require('archiver');
 const { exec } = require('child_process');
 const { parse, stringify } = require('subtitle')
 const sanitizeHtml = require('sanitize-html');
-const { compareSeasonEpisodeTuples, parseEpisodeId } = require('./episode-utils');
+const { compareSeasonEpisodeTuples, parseEpisodeId, sortEpisodeIds } = require('./episode-utils');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov', '.m4v']);
 const subtitleExtensions = new Set(['.srt']);
@@ -849,25 +849,39 @@ async function seedStatusFile(id, directoryPath) {
         writeNeeded = true;
     }
 
-    const sortedKeys = Array.from(episodeKeys).map((key) => {
+    const seasonEpisodeBuckets = new Map();
+    episodeKeys.forEach((key) => {
         const [seasonRaw, episodeRaw] = key.split('-');
-        return { season: parseInt(seasonRaw, 10), episode: `${episodeRaw}` };
-    }).sort(compareSeasonEpisodeTuples);
+        const season = parseInt(seasonRaw, 10);
+        if (Number.isNaN(season)) {
+            return;
+        }
+        const normalizedEpisode = `${episodeRaw}`;
+        if (!seasonEpisodeBuckets.has(season)) {
+            seasonEpisodeBuckets.set(season, new Set());
+        }
+        seasonEpisodeBuckets.get(season).add(normalizedEpisode);
+    });
 
-    sortedKeys.forEach(({ season, episode }) => {
+    const sortedSeasons = Array.from(seasonEpisodeBuckets.keys()).sort((a, b) => a - b);
+
+    sortedSeasons.forEach((season) => {
         const seasonKey = `${season}`;
         if (!statusData[seasonKey]) {
             statusData[seasonKey] = {};
         }
 
-        if (!statusData[seasonKey][episode]) {
-            statusData[seasonKey][episode] = 'pending';
-            writeNeeded = true;
-        }
+        const sortedEpisodes = sortEpisodeIds(seasonEpisodeBuckets.get(season));
+        sortedEpisodes.forEach((episode) => {
+            if (!statusData[seasonKey][episode]) {
+                statusData[seasonKey][episode] = 'pending';
+                writeNeeded = true;
+            }
 
-        if (cleanupLegacyEpisodeKey(statusData, seasonKey, episode)) {
-            writeNeeded = true;
-        }
+            if (cleanupLegacyEpisodeKey(statusData, seasonKey, episode)) {
+                writeNeeded = true;
+            }
+        });
     });
 
     if (writeNeeded) {
