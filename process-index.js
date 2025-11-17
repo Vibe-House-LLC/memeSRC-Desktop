@@ -9,6 +9,7 @@ const archiver = require('archiver');
 const { exec } = require('child_process');
 const { parse, stringify } = require('subtitle')
 const sanitizeHtml = require('sanitize-html');
+const { compareSeasonEpisodeTuples, parseEpisodeId, sortEpisodeIds } = require('./episode-utils');
 
 const mediaExtensions = new Set(['.mp4', '.mkv', '.avi', '.mov', '.m4v']);
 const subtitleExtensions = new Set(['.srt']);
@@ -128,7 +129,17 @@ function encodeBase64(text) {
 }
 
 async function ensureMemesrcDir(id, season = '', episode = '') {
-    const memesrcDir = path.join(os.homedir(), '.memesrc', 'processing', id, season, episode);
+    const segments = [os.homedir(), '.memesrc', 'processing', id];
+
+    if (season !== undefined && season !== null && season !== '') {
+        segments.push(`${season}`);
+    }
+
+    if (episode !== undefined && episode !== null && episode !== '') {
+        segments.push(`${episode}`);
+    }
+
+    const memesrcDir = path.join(...segments);
     await fsp.mkdir(memesrcDir, { recursive: true });
     return memesrcDir;
 }
@@ -259,7 +270,7 @@ async function ensureSubtitlesFromMedia(directoryPath, id, processedSubtitles) {
             continue;
         }
 
-        const seasonEpisode = await extractSeasonEpisode(entry.name);
+        const seasonEpisode = await extractSeasonEpisode(entry.name, fullPath);
         if (!seasonEpisode) {
             continue;
         }
@@ -385,9 +396,33 @@ async function appendToFileWithoutDuplicates(filePath, content, headers) {
     }
 }
 
+function cleanupLegacyEpisodeKey(statusData, seasonKey, episodeKey) {
+    const seasonBucket = statusData[seasonKey];
+    if (!seasonBucket) {
+        return false;
+    }
+
+    const parsed = parseEpisodeId(episodeKey);
+    if (!parsed || !Number.isFinite(parsed.numeric)) {
+        return false;
+    }
+
+    const legacyEpisodeKey = `${parsed.numeric}`;
+    if (legacyEpisodeKey === `${episodeKey}`) {
+        return false;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(seasonBucket, legacyEpisodeKey)) {
+        delete seasonBucket[legacyEpisodeKey];
+        return true;
+    }
+
+    return false;
+}
+
 // New function to split media files into 25-second segments at 10 fps
 async function splitMediaFileIntoSegments(filePath, id, season, episode) {
-    const outputDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
+    const outputDir = await ensureMemesrcDir(id, season, episode);
     const scaleAndFps = `fps=10,scale='min(iw\\,1280):2*trunc((min(iw\\,1280)/iw*ih)/2)'`;
     const crfValue = "-crf 31";
     const preset = "-preset fast";
@@ -410,19 +445,89 @@ function timeToFrameIndex(milliseconds) {
     return Math.round(milliseconds / 100); // Convert milliseconds to frame index at 10 fps
 }
 
-async function extractSeasonEpisode(filename) {
-    const SEPattern = /S(\d+)E(\d+)|S(\d+)\.E(\d+)|(\d+)x(\d+)|(\d+)-(\d+)/i;
-    const match = filename.match(SEPattern);
+function normalizeEpisodeToken(rawEpisode) {
+    if (!rawEpisode && rawEpisode !== 0) {
+        return null;
+    }
+    const token = `${rawEpisode}`.trim();
+    const match = token.match(/^(\d+)([A-Za-z]+)?$/);
+    if (!match) {
+        return null;
+    }
 
-    if (match) {
-        for (let i = 1; i < match.length; i += 2) {
-            if (match[i] && match[i + 1]) {
-                return { season: parseInt(match[i], 10), episode: parseInt(match[i + 1], 10) };
+    const digits = match[1];
+    const suffix = (match[2] || '').toLowerCase();
+    return `${digits}${suffix}`;
+}
+
+function matchSeasonEpisodeFromString(target) {
+    if (!target) {
+        return null;
+    }
+
+    const patterns = [
+        /S(\d+)[\.\s_-]*E(\d+[A-Za-z]*)/i,
+        /(\d+)[x-](\d+[A-Za-z]*)/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = target.match(pattern);
+        if (match && match[1] && match[2]) {
+            const season = parseInt(match[1], 10);
+            const episodeToken = normalizeEpisodeToken(match[2]);
+            if (!Number.isNaN(season) && episodeToken) {
+                return { season, episode: episodeToken };
             }
         }
     }
 
     return null;
+}
+
+function extractFromPathSegments(fullPath) {
+    if (!fullPath) {
+        return null;
+    }
+
+    const segments = `${fullPath}`.split(/[\\/]/).filter(Boolean);
+    if (segments.length < 2) {
+        return null;
+    }
+
+    for (let i = segments.length - 1; i > 0; i--) {
+        const episodeMatch = segments[i].match(/(\d+[A-Za-z]*)$/);
+        const episodeToken = episodeMatch ? normalizeEpisodeToken(episodeMatch[1]) : null;
+        if (!episodeToken) {
+            continue;
+        }
+
+        for (let j = i - 1; j >= 0; j--) {
+            const seasonMatch = segments[j].match(/(\d+)/);
+            if (!seasonMatch) {
+                continue;
+            }
+            const season = parseInt(seasonMatch[1], 10);
+            if (!Number.isNaN(season)) {
+                return { season, episode: episodeToken };
+            }
+        }
+    }
+
+    return null;
+}
+
+async function extractSeasonEpisode(filename, fullPath = '') {
+    const nameMatch = matchSeasonEpisodeFromString(filename);
+    if (nameMatch) {
+        return nameMatch;
+    }
+
+    const pathMatch = matchSeasonEpisodeFromString(fullPath);
+    if (pathMatch) {
+        return pathMatch;
+    }
+
+    return extractFromPathSegments(fullPath);
 }
 
 function getFileType(filename) {
@@ -462,7 +567,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles, processe
         } else {
             const fileType = getFileType(entry.name);
             if (fileType === 'media') {
-                const seasonEpisode = await extractSeasonEpisode(entry.name);
+                const seasonEpisode = await extractSeasonEpisode(entry.name, fullPath);
                 if (seasonEpisode) {
                     const episodeKey = getEpisodeKey(seasonEpisode.season, seasonEpisode.episode);
                     if (processedEpisodes.has(episodeKey)) {
@@ -507,7 +612,7 @@ async function processMediaFiles(directoryPath, id, processedSubtitles, processe
 }
 
 async function extractSubtitleClips(filePath, id, season, episode) {
-    const episodeDir = await ensureMemesrcDir(id, season.toString(), episode.toString());
+    const episodeDir = await ensureMemesrcDir(id, season, episode);
     const csvFilePath = path.join(episodeDir, '_docs.csv');
     try {
         const captions = await readCaptionsFromCSV(csvFilePath);
@@ -544,7 +649,7 @@ async function processSubtitles(directoryPath, id, processedSubtitles) {
         } else {
             const fileType = getFileType(entry.name);
             if (fileType === 'subtitle') {
-                const seasonEpisode = await extractSeasonEpisode(entry.name);
+                const seasonEpisode = await extractSeasonEpisode(entry.name, fullPath);
                 if (seasonEpisode) {
                     const episodeKey = getEpisodeKey(seasonEpisode.season, seasonEpisode.episode);
                     // Skip processing subtitles if it's already 'done' status
@@ -678,8 +783,24 @@ async function checkStatus(id, season, episode) {
     try {
         const data = await fsp.readFile(statusFilePath, 'utf-8');
         const statusData = JSON.parse(data);
-        if (statusData[season] && statusData[season][episode]) {
-            return statusData[season][episode]; // Return the status ('pending', 'indexing', 'done')
+        const seasonKey = `${season}`;
+        const seasonBucket = statusData[seasonKey];
+        if (!seasonBucket) {
+            return 'pending';
+        }
+
+        const episodeKey = `${episode}`;
+        if (Object.prototype.hasOwnProperty.call(seasonBucket, episodeKey)) {
+            return seasonBucket[episodeKey];
+        }
+
+        // Legacy fallback for numeric-only episode ids that were stored without zero padding.
+        const parsedEpisode = parseEpisodeId(episodeKey);
+        if (parsedEpisode && parsedEpisode.suffix === '' && Number.isFinite(parsedEpisode.numeric)) {
+            const legacyEpisodeKey = `${parsedEpisode.numeric}`;
+            if (Object.prototype.hasOwnProperty.call(seasonBucket, legacyEpisodeKey)) {
+                return seasonBucket[legacyEpisodeKey];
+            }
         }
     } catch (error) {
         console.log("Status file does not exist or cannot be read. Assuming 'pending'.");
@@ -700,7 +821,7 @@ async function collectEpisodeKeys(directoryPath, episodeKeys = new Set()) {
             continue;
         }
 
-        const seasonEpisode = await extractSeasonEpisode(entry.name);
+        const seasonEpisode = await extractSeasonEpisode(entry.name, fullPath);
         if (seasonEpisode) {
             episodeKeys.add(getEpisodeKey(seasonEpisode.season, seasonEpisode.episode));
         }
@@ -728,19 +849,39 @@ async function seedStatusFile(id, directoryPath) {
         writeNeeded = true;
     }
 
+    const seasonEpisodeBuckets = new Map();
     episodeKeys.forEach((key) => {
         const [seasonRaw, episodeRaw] = key.split('-');
         const season = parseInt(seasonRaw, 10);
-        const episode = parseInt(episodeRaw, 10);
+        if (Number.isNaN(season)) {
+            return;
+        }
+        const normalizedEpisode = `${episodeRaw}`;
+        if (!seasonEpisodeBuckets.has(season)) {
+            seasonEpisodeBuckets.set(season, new Set());
+        }
+        seasonEpisodeBuckets.get(season).add(normalizedEpisode);
+    });
 
-        if (!statusData[season]) {
-            statusData[season] = {};
+    const sortedSeasons = Array.from(seasonEpisodeBuckets.keys()).sort((a, b) => a - b);
+
+    sortedSeasons.forEach((season) => {
+        const seasonKey = `${season}`;
+        if (!statusData[seasonKey]) {
+            statusData[seasonKey] = {};
         }
 
-        if (!statusData[season][episode]) {
-            statusData[season][episode] = 'pending';
-            writeNeeded = true;
-        }
+        const sortedEpisodes = sortEpisodeIds(seasonEpisodeBuckets.get(season));
+        sortedEpisodes.forEach((episode) => {
+            if (!statusData[seasonKey][episode]) {
+                statusData[seasonKey][episode] = 'pending';
+                writeNeeded = true;
+            }
+
+            if (cleanupLegacyEpisodeKey(statusData, seasonKey, episode)) {
+                writeNeeded = true;
+            }
+        });
     });
 
     if (writeNeeded) {
@@ -762,10 +903,14 @@ async function updateStatusFile(id, season, episode, status) {
     }
 
     // Update the status for the specific season and episode
-    if (!statusData[season]) {
-        statusData[season] = {};
+    const seasonKey = `${season}`;
+    if (!statusData[seasonKey]) {
+        statusData[seasonKey] = {};
     }
-    statusData[season][episode] = status;
+
+    const episodeKey = `${episode}`;
+    statusData[seasonKey][episodeKey] = status;
+    cleanupLegacyEpisodeKey(statusData, seasonKey, episodeKey);
 
     // Write the updated status data back to the file
     await fsp.writeFile(statusFilePath, JSON.stringify(statusData, null, 2), 'utf-8');
@@ -790,21 +935,28 @@ async function processDirectory(directoryPath, id, title = "", description = "",
         await ensureSubtitlesFromMedia(directoryPath, id, processedSubtitles);
 
         // Now, process media files only after subtitles are processed
-        const seasonEpisodes = await processMediaFiles(directoryPath, id, processedSubtitles);
+        const rawSeasonEpisodes = await processMediaFiles(directoryPath, id, processedSubtitles);
+        const seasonEpisodes = rawSeasonEpisodes.sort(compareSeasonEpisodeTuples);
 
         // Summarize the processing results
-        const seasonEpisodeSummary = seasonEpisodes.reduce((acc, { season, episode, type }) => {
-            const key = `Season ${season}, Episode ${episode}`;
-            if (!acc[key]) {
-                acc[key] = { media: false, subtitle: false };
+        const seasonEpisodeSummary = seasonEpisodes.reduce((acc, entry) => {
+            const key = getEpisodeKey(entry.season, entry.episode);
+            if (!acc.has(key)) {
+                acc.set(key, {
+                    season: entry.season,
+                    episode: entry.episode,
+                    media: false,
+                    subtitle: false
+                });
             }
-            acc[key][type] = true;
+            const summary = acc.get(key);
+            summary[entry.type] = true;
             return acc;
-        }, {});
+        }, new Map());
 
         console.log("Season-Episode Summary:");
-        Object.entries(seasonEpisodeSummary).forEach(([key, { media, subtitle }]) => {
-            console.log(`${key}: Media - ${media ? 'Yes' : 'No'}, Subtitle - ${subtitle ? 'Yes' : 'No'}`);
+        seasonEpisodeSummary.forEach(({ season, episode, media, subtitle }) => {
+            console.log(`Season ${season}, Episode ${episode}: Media - ${media ? 'Yes' : 'No'}, Subtitle - ${subtitle ? 'Yes' : 'No'}`);
         });
 
         return seasonEpisodes;

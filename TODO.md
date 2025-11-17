@@ -1,0 +1,8 @@
+# TODO – Desktop processor episode suffixes
+
+- [x] Parsing (`process-index.js`): teach `extractSeasonEpisode` (and any fallback that inspects folder parts) to capture optional trailing letters, return the raw episode token (e.g., `03a`), and propagate that string through `getEpisodeKey`, `processMediaFiles`, `processSubtitles`, log statements, and any other call sites that currently expect integers.
+- [x] Status/resume bookkeeping (`seedStatusFile`, `checkStatus`, `updateStatusFile`, `collectEpisodeKeys`): stop running `parseInt` on episode ids, store the full string inside `status.json`, and make sure cancellation/resume messages keep the suffix so `E01a` and `E01b` never collide.
+- [x] Filesystem layout & CSV output (`ensureMemesrcDir`, `writeCaptionsAsCSV`, `splitMediaFileIntoSegments`): ensure the directory names, `_docs.csv` rows, and clip manifests all use the preserved episode id so whatever lands in `~/.memesrc/processing/...` mirrors what the web app expects in S3.
+- [x] CLI orchestration (`process-index.js`): ensure the Node pipeline sorts literal episode ids before building summaries, cleans up legacy numeric keys in `status.json`, and emits the ordered list for renderer IPC consumers.
+- [x] Renderer/UX touch points: anywhere the Electron UI emits or displays a season/episode (IPC replies like `javascript-processing-result`, progress tables, logs) needs to surface the string id and avoid formatting it back to a bare integer; add a helper so UI lists sort `03`, `03a`, `03b`, `04` predictably.
+- [x] Sorting helper: consolidate the "numeric prefix + suffix" ordering logic in this repo and reuse it for iterating episode ids (status seeding, summaries, zip order) so multi-part episodes stay grouped correctly.
